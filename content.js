@@ -5,6 +5,8 @@ const AREA = YTAI_LANG === 'en'
   ? { main: 'main', player: 'player', sidebar: 'sidebar', header: 'header', right: 'right' }
   : { main: '메인', player: '플레이어', sidebar: '사이드바', header: '헤더', right: '우측' };
 
+const MIC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+
 // Prevent double injection
 if (window.__ytAiHelperLoaded) {
   // already loaded
@@ -19,6 +21,30 @@ function initHelper() {
   createLiveRegion();
   loadViewSettings();
   listenForShortcuts();
+  watchMiniplayer();
+}
+
+// ─── 미니플레이어 피하기 ─────────────────────────────────────────────────────
+// 유튜브 미니플레이어도 화면 오른쪽 아래에 뜬다. 떠 있으면 버튼 묶음(가-/가+/도움받기)과
+// 패널·알림을 그 위로 올린다. 위치는 content.css의 --ytai-dock-bottom 변수.
+
+function watchMiniplayer() {
+  const update = () => {
+    const r = document.querySelector('ytd-miniplayer')?.getBoundingClientRect();
+    const inCorner = r && r.width > 0 && r.height > 0 &&
+      r.right > window.innerWidth - 200 && r.bottom > window.innerHeight - 200;
+    document.documentElement.style.setProperty(
+      '--ytai-dock-bottom',
+      inCorner ? Math.round(window.innerHeight - r.top + 16) + 'px' : '80px'
+    );
+  };
+  // 미니플레이어는 열리고 닫힐 때 애니메이션이 있어서 끝난 뒤 한 번 더 잰다
+  const later = () => { update(); setTimeout(update, 400); };
+  const app = document.querySelector('ytd-app');
+  if (app) new MutationObserver(later).observe(app, { attributes: true });
+  window.addEventListener('resize', update);
+  document.addEventListener('yt-navigate-finish', later);
+  update();
 }
 
 // ─── 단축키 (보조 수단) ──────────────────────────────────────────────────────
@@ -128,17 +154,11 @@ function createHelperPanel() {
       <button type="button" class="ytai-close-btn" id="ytai-panel-close" aria-label="${t('closeLabel')}"><span aria-hidden="true">✕</span></button>
     </div>
     <div class="ytai-panel-body" id="ytai-panel-body">
-      <button type="button" class="ytai-open-settings" id="ytai-open-settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span>${t('openSettingsBtn')}</span>
+      <button type="button" id="ytai-voice-btn" class="ytai-voice-btn">
+        ${MIC_ICON}
+        <span>${t('voiceBtnLabel')}</span>
       </button>
-      <div class="ytai-autoclick-row">
-        <span class="ytai-autoclick-label">${t('autoClickLabel')}</span>
-        <label class="ytai-switch">
-          <input type="checkbox" id="ytai-autoclick-chk" aria-label="${t('autoClickLabel')}">
-          <span class="ytai-slider"></span>
-        </label>
-      </div>
+      <div id="ytai-voice-status" class="ytai-voice-status" aria-live="polite"></div>
 
       <div class="ytai-quick-grid">
         <button class="ytai-quick-btn" data-type="play" data-label="${t('quickPlay')}">
@@ -178,32 +198,35 @@ function createHelperPanel() {
           <span>${t('quickHome')}</span>
         </button>
       </div>
-      <div class="ytai-or">${t('orSpeakOrType')}</div>
-      <button id="ytai-voice-btn" class="ytai-voice-btn">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-        <span>${t('voiceBtnLabel')}</span>
+
+      <!-- 글자 입력은 기본으로 접어 둔다. 어르신에게는 말하기와 빠른 버튼이 먼저 -->
+      <button type="button" class="ytai-type-toggle" id="ytai-type-toggle" aria-expanded="false" aria-controls="ytai-type-area">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="18" y1="10" x2="18" y2="10"/><line x1="7" y1="14" x2="17" y2="14"/></svg>
+        <span>${t('typeToggle')}</span>
       </button>
-      <div id="ytai-voice-status" class="ytai-voice-status"></div>
-      <div class="ytai-or">${t('orText')}</div>
-      <textarea id="ytai-input" placeholder="${t('inputPlaceholder')}" rows="3"></textarea>
-      <button id="ytai-send-btn" class="ytai-send-btn">${t('sendBtnLabel')}</button>
+      <div class="ytai-type-area" id="ytai-type-area" hidden>
+        <textarea id="ytai-input" placeholder="${t('inputPlaceholder')}" rows="3" aria-label="${t('typeToggle')}"></textarea>
+        <button type="button" id="ytai-send-btn" class="ytai-send-btn">${t('sendBtnLabel')}</button>
+      </div>
       <div id="ytai-loading" class="ytai-loading" style="display:none">
         <div class="ytai-spinner"></div>
         <span>${t('loadingText')}</span>
       </div>
+
+      <button type="button" class="ytai-open-settings" id="ytai-open-settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>${t('openSettingsBtn')}</span>
+      </button>
     </div>
     ${settingsHtml()}
   `;
   document.body.appendChild(panel);
 
-  // 자동 클릭 토글 초기화
-  chrome.storage.local.get('autoClick', (data) => {
-    _autoClick = !!data.autoClick;
-    document.getElementById('ytai-autoclick-chk').checked = _autoClick;
-  });
-  document.getElementById('ytai-autoclick-chk').addEventListener('change', (e) => {
-    _autoClick = e.target.checked;
-    chrome.storage.local.set({ autoClick: _autoClick });
+  document.getElementById('ytai-type-toggle').addEventListener('click', (e) => {
+    const area = document.getElementById('ytai-type-area');
+    area.hidden = !area.hidden;
+    e.currentTarget.setAttribute('aria-expanded', String(!area.hidden));
+    if (!area.hidden) document.getElementById('ytai-input').focus();
   });
 
   // 퀵액션 버튼
@@ -274,21 +297,32 @@ function resetPanel() {
 // <html>의 data-ytai-* 속성 → content.css의 변수.
 
 const VIEW_SIZES = ['normal', 'large', 'xlarge'];
-const VIEW_DEFAULTS = { size: 'normal', color: 'default', tts: false, autoClickDelay: 2 };
+// autoClick: 0이면 끔, 2·5·10이면 그 초만큼 기다렸다가 자동 클릭
+const VIEW_DEFAULTS = { size: 'normal', color: 'default', tts: false, autoClick: 0 };
 let _view = { ...VIEW_DEFAULTS };
 
 function sanitizeView(v) {
   const out = { ...VIEW_DEFAULTS, ...(v || {}) };
   if (!VIEW_SIZES.includes(out.size)) out.size = VIEW_DEFAULTS.size;
   if (!['default', 'contrast'].includes(out.color)) out.color = VIEW_DEFAULTS.color;
-  if (![2, 5, 10].includes(out.autoClickDelay)) out.autoClickDelay = VIEW_DEFAULTS.autoClickDelay;
+  if (![0, 2, 5, 10].includes(out.autoClick)) out.autoClick = VIEW_DEFAULTS.autoClick;
+  delete out.autoClickDelay;
   out.tts = !!out.tts;
   return out;
 }
 
 function loadViewSettings() {
-  chrome.storage.local.get('view', (data) => {
-    _view = sanitizeView(data.view);
+  // 크롬은 음성 목록을 처음 요청할 때 불러오므로 미리 한 번 불러 둔다 (첫 안내부터 설치된 음성을 쓰도록)
+  if ('speechSynthesis' in window) speechSynthesis.getVoices?.();
+  chrome.storage.local.get(['view', 'autoClick'], (data) => {
+    const v = { ...(data.view || {}) };
+    // 예전 버전 저장값 옮기기: 자동 클릭 켜기/끄기(autoClick: true/false) + 대기 시간(autoClickDelay)
+    if (v.autoClick === undefined && (data.autoClick !== undefined || v.autoClickDelay !== undefined)) {
+      v.autoClick = data.autoClick ? ([2, 5, 10].includes(v.autoClickDelay) ? v.autoClickDelay : 2) : 0;
+      chrome.storage.local.remove('autoClick');
+      chrome.storage.local.set({ view: sanitizeView(v) });
+    }
+    _view = sanitizeView(v);
     applyViewSettings();
   });
   // 다른 탭에서 바꾼 설정도 바로 반영
@@ -393,22 +427,15 @@ function settingsHtml() {
         <p class="ytai-setting-hint">${t('settingTtsHint')}</p>
       </div>
 
-      <div class="ytai-setting" role="group" aria-labelledby="ytai-set-caption">
-        <div class="ytai-setting-label" id="ytai-set-caption">${t('settingCaption')}</div>
+      <div class="ytai-setting" role="group" aria-labelledby="ytai-set-autoclick">
+        <div class="ytai-setting-label" id="ytai-set-autoclick">${t('autoClickLabel')}</div>
         <div class="ytai-choice-row">
-          <button type="button" class="ytai-choice" id="ytai-caption-down">${t('captionSmaller')}</button>
-          <button type="button" class="ytai-choice" id="ytai-caption-up">${t('captionBigger')}</button>
+          ${choice('autoClick', '0', t('autoClickOff'))}
+          ${choice('autoClick', '2', t('delaySeconds').replace('{n}', 2))}
+          ${choice('autoClick', '5', t('delaySeconds').replace('{n}', 5))}
+          ${choice('autoClick', '10', t('delaySeconds').replace('{n}', 10))}
         </div>
-        <p class="ytai-setting-hint">${t('settingCaptionHint')}</p>
-      </div>
-
-      <div class="ytai-setting" role="group" aria-labelledby="ytai-set-delay">
-        <div class="ytai-setting-label" id="ytai-set-delay">${t('settingDelay')}</div>
-        <div class="ytai-choice-row">
-          ${choice('autoClickDelay', '2', t('delaySeconds').replace('{n}', 2))}
-          ${choice('autoClickDelay', '5', t('delaySeconds').replace('{n}', 5))}
-          ${choice('autoClickDelay', '10', t('delaySeconds').replace('{n}', 10))}
-        </div>
+        <p class="ytai-setting-hint">${t('autoClickHint')}</p>
       </div>
 
       <button type="button" class="ytai-back-btn" id="ytai-settings-back">${t('settingsBack')}</button>
@@ -426,7 +453,7 @@ function bindSettings() {
   document.querySelectorAll('#ytai-settings-body [data-view-key]').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.viewKey;
-      const value = key === 'autoClickDelay' ? Number(btn.dataset.viewValue) : btn.dataset.viewValue;
+      const value = key === 'autoClick' ? Number(btn.dataset.viewValue) : btn.dataset.viewValue;
       setView(key, value);
     });
   });
@@ -441,12 +468,6 @@ function bindSettings() {
     if (e.target.checked) speak(t('ttsOnSample'));
   });
 
-  const caption = (dir) => {
-    if (!changeCaptionSize(dir)) showToast(t('captionOffToast'));
-    else showToast(t(dir > 0 ? 'captionBiggerToast' : 'captionSmallerToast'));
-  };
-  document.getElementById('ytai-caption-up').addEventListener('click', () => caption(1));
-  document.getElementById('ytai-caption-down').addEventListener('click', () => caption(-1));
 }
 
 function openSettings() {
@@ -473,6 +494,10 @@ function speak(text) {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = YTAI_LANG === 'ko' ? 'ko-KR' : 'en-US';
+    // 크롬의 "Google 한국어" 같은 온라인 음성은 문장을 구글 서버로 보낸다.
+    // 컴퓨터에 설치된 음성(Windows: Microsoft Heami, Mac: Yuna 등)이 있으면 그것을 쓴다.
+    const voice = speechSynthesis.getVoices?.().find(v => v.localService && v.lang.replace('_', '-').startsWith(u.lang.slice(0, 2)));
+    if (voice) u.voice = voice;
     u.rate = 0.9;
     const timer = setTimeout(resolve, 3000 + text.length * 250);
     u.onend = u.onerror = () => { clearTimeout(timer); resolve(); };
@@ -524,7 +549,7 @@ function startVoice() {
 
   recognition.onend = () => {
     btn.classList.remove('ytai-recording');
-    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><span>${t('voiceBtnLabel')}</span>`;
+    btn.innerHTML = `${MIC_ICON}<span>${t('voiceBtnLabel')}</span>`;
     recognition = null;
     const val = document.getElementById('ytai-input').value.trim();
     if (val) setTimeout(() => submitRequest(val), 400);
@@ -532,7 +557,7 @@ function startVoice() {
 
   recognition.onerror = () => {
     btn.classList.remove('ytai-recording');
-    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><span>${t('voiceBtnLabel')}</span>`;
+    btn.innerHTML = `${MIC_ICON}<span>${t('voiceBtnLabel')}</span>`;
     status.textContent = t('voiceError');
     recognition = null;
   };
@@ -929,7 +954,6 @@ let _trackingElementText = null;
 let _rafId = null;
 let _targetEl = null;
 let _targetClickFn = null;
-let _autoClick = false;
 let _autoClickTimer = null;
 // 단계가 바뀌거나 안내가 끝나면 증가. 늦게 끝난 음성 읽기가 지난 단계의 자동 클릭을 시작하지 않게 한다.
 let _guideToken = 0;
@@ -1066,7 +1090,7 @@ function cancelAutoClick() {
 }
 
 function startAutoClickCountdown(elementType, elementText) {
-  let secs = _view.autoClickDelay;
+  let secs = _view.autoClick;
   const updateBtn = () => {
     const btn = document.getElementById('ytai-instr-ok');
     if (btn) btn.textContent = t('autoClickCountdown').replace('{n}', secs);
@@ -1208,7 +1232,7 @@ function showStep(index) {
   const eText = step.element_text ?? null;
   const hasTarget = !!(eType || eText);
   let targetY = null;
-  const autoClickHere = _autoClick && hasTarget && canAutoClick(eType, eText);
+  const autoClickHere = _view.autoClick > 0 && hasTarget && canAutoClick(eType, eText);
 
   if (hasTarget) {
     // 일반 영상 화면에서 스크롤로 버튼이 화면 밖에 있으면 보이는 곳으로 가져온다
@@ -1254,9 +1278,9 @@ function showStep(index) {
     ? `<div class="ytai-step-indicator">${index + 1} / ${total}</div>`
     : '';
 
-  const btnLabel = isLast ? t('confirmBtn') : (autoClickHere ? t('autoClickCountdown').replace('{n}', _view.autoClickDelay) : (hasTarget ? t('skipBtn') : t('nextBtn')));
+  const btnLabel = isLast ? t('confirmBtn') : (autoClickHere ? t('autoClickCountdown').replace('{n}', _view.autoClick) : (hasTarget ? t('skipBtn') : t('nextBtn')));
   // 자동 클릭을 켰지만 이 버튼은 안전 목록 밖이라 직접 눌러야 하는 경우
-  const manualNote = _autoClick && hasTarget && !autoClickHere
+  const manualNote = _view.autoClick > 0 && hasTarget && !autoClickHere
     ? `<div class="ytai-instr-note">${t('autoClickManualNote')}</div>`
     : '';
 

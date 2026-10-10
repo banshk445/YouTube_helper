@@ -26,6 +26,9 @@
   --ytai-label-fg: #1a1a1a;
 
   --ytai-font: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+
+  /* 버튼 묶음의 바닥 위치. 유튜브 미니플레이어가 떠 있으면 content.js가 그 위로 올린다 */
+  --ytai-dock-bottom: 80px;
 }
 
 html[data-ytai-size="large"]  { --ytai-scale: 1.25; }
@@ -52,7 +55,7 @@ html[data-ytai-color="contrast"] {
 
 #ytai-dock {
   position: fixed;
-  bottom: 80px;
+  bottom: var(--ytai-dock-bottom);
   right: 24px;
   z-index: 2147483640;
   display: flex;
@@ -138,12 +141,12 @@ html[data-ytai-color="contrast"] {
 #ytai-panel {
   position: fixed;
   /* 도우미 버튼 묶음 바로 위 */
-  bottom: calc(80px + 48px * var(--ytai-scale) + 16px);
+  bottom: calc(var(--ytai-dock-bottom) + 48px * var(--ytai-scale) + 16px);
   right: 24px;
   z-index: 2147483641;
   width: calc(320px * var(--ytai-scale));
   max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 80px - 48px * var(--ytai-scale) - 32px);
+  max-height: calc(100vh - var(--ytai-dock-bottom) - 48px * var(--ytai-scale) - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
   background: #fff;
@@ -217,18 +220,16 @@ html[data-ytai-color="contrast"] {
 #ytai-panel.ytai-settings-open .ytai-panel-body { display: none; }
 #ytai-panel.ytai-settings-open .ytai-settings-body { display: flex; }
 
-.ytai-loading-mode .ytai-hint,
 .ytai-loading-mode .ytai-voice-btn,
 .ytai-loading-mode .ytai-voice-status,
-.ytai-loading-mode .ytai-or,
-.ytai-loading-mode #ytai-input,
-.ytai-loading-mode .ytai-send-btn,
-.ytai-loading-mode .ytai-autoclick-row,
+.ytai-loading-mode .ytai-type-toggle,
+.ytai-loading-mode .ytai-type-area,
 .ytai-loading-mode .ytai-open-settings,
 .ytai-loading-mode .ytai-quick-grid { display: none !important; }
 
-/* 보기 설정 열기 버튼 */
-.ytai-open-settings {
+/* 보기 설정 열기 · 글로 입력하기: 패널 아래쪽의 보조 버튼 */
+.ytai-open-settings,
+.ytai-type-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -236,20 +237,30 @@ html[data-ytai-color="contrast"] {
   width: 100%;
   padding: calc(10px * var(--ytai-scale));
   background: #fff;
-  border: 2px solid var(--ytai-accent-text);
+  border: 1.5px solid #c4c8cf;
   border-radius: 12px;
-  color: var(--ytai-accent-text);
+  color: #1a1a1a;
   font-family: inherit;
   font-size: calc(14px * var(--ytai-scale));
   font-weight: 700;
   cursor: pointer;
 }
-.ytai-open-settings:hover { background: var(--ytai-soft-hover); }
-.ytai-open-settings svg {
+.ytai-open-settings:hover,
+.ytai-type-toggle:hover { background: #f4f4f5; }
+.ytai-type-toggle[aria-expanded="true"] { border-color: var(--ytai-accent-text); }
+.ytai-open-settings svg,
+.ytai-type-toggle svg {
   width: calc(18px * var(--ytai-scale));
   height: calc(18px * var(--ytai-scale));
   flex-shrink: 0;
 }
+
+.ytai-type-area {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--ytai-scale));
+}
+.ytai-type-area[hidden] { display: none; }
 
 /* Quick action grid */
 .ytai-quick-grid {
@@ -297,25 +308,11 @@ html[data-ytai-color="contrast"] {
   white-space: nowrap;
 }
 
-/* Auto-click toggle */
-.ytai-autoclick-row,
 .ytai-setting-switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-}
-
-.ytai-autoclick-row {
-  padding: 2px 0 10px;
-  border-bottom: 1px solid #ececec;
-  margin-bottom: 2px;
-}
-
-.ytai-autoclick-label {
-  font-size: calc(14px * var(--ytai-scale));
-  font-weight: 600;
-  color: #444;
 }
 
 .ytai-switch {
@@ -366,40 +363,30 @@ html[data-ytai-color="contrast"] {
 .ytai-switch input:checked + .ytai-slider::before { transform: translateX(calc(20px * var(--ytai-scale))); }
 
 
-.ytai-hint {
-  font-size: calc(13px * var(--ytai-scale));
-  color: #6b7280;
-  text-align: center;
-  line-height: 1.6;
-  margin: 0;
-}
-
-/* Voice button */
+/* Voice button: 어르신에게 가장 쉬운 방법이라 패널 맨 위에 가장 크게 */
 .ytai-voice-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: calc(13px * var(--ytai-scale));
-  background: var(--ytai-soft);
-  border: 1.5px solid var(--ytai-soft-border);
-  border-radius: 12px;
-  color: var(--ytai-accent-text);
+  padding: calc(16px * var(--ytai-scale));
+  background: var(--ytai-accent);
+  border: 2px solid var(--ytai-accent-outline);
+  border-radius: 14px;
+  color: var(--ytai-on-accent);
   font-family: inherit;
-  font-size: calc(15px * var(--ytai-scale));
-  font-weight: 700;
+  font-size: calc(17px * var(--ytai-scale));
+  font-weight: 800;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 .ytai-voice-btn svg {
-  width: calc(16px * var(--ytai-scale));
-  height: calc(16px * var(--ytai-scale));
+  width: calc(20px * var(--ytai-scale));
+  height: calc(20px * var(--ytai-scale));
+  flex-shrink: 0;
 }
-.ytai-voice-btn:hover {
-  background: var(--ytai-soft-hover);
-  border-color: var(--ytai-soft-border-hover);
-}
+.ytai-voice-btn:hover { background: var(--ytai-accent-hover); }
 /* 녹음 중: 색(빨강)만이 아니라 아이콘(■)과 글자("듣고 있어요")도 같이 바뀐다 */
 .ytai-voice-btn.ytai-recording {
   background: #fff0f0;
@@ -417,22 +404,9 @@ html[data-ytai-color="contrast"] {
   font-size: calc(14px * var(--ytai-scale));
   color: var(--ytai-accent-text);
   text-align: center;
-  min-height: 18px;
 }
-
-.ytai-or {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #6b7280;
-  font-size: calc(13px * var(--ytai-scale));
-}
-.ytai-or::before, .ytai-or::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: #ececec;
-}
+/* 말하는 중이 아닐 때는 빈 줄이 자리만 차지하지 않게 */
+.ytai-voice-status:empty { display: none; }
 
 /* Text input */
 #ytai-input {
@@ -697,8 +671,6 @@ html[data-ytai-color="contrast"] {
   to   { transform: translateX(-50%) translateY(0);   opacity: 1; }
 }
 
-.ytai-instr-icon { display: none; }
-
 .ytai-step-indicator {
   font-size: calc(13px * var(--ytai-scale));
   font-weight: 700;
@@ -751,7 +723,7 @@ html[data-ytai-color="contrast"] {
 #ytai-toast {
   position: fixed;
   /* 아래 버튼 묶음(가-/가+/도움받기)과 겹치지 않게 그 위에 띄운다 */
-  bottom: calc(80px + 48px * var(--ytai-scale) + 24px);
+  bottom: calc(var(--ytai-dock-bottom) + 48px * var(--ytai-scale) + 24px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 2147483645;
