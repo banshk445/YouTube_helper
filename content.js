@@ -16,14 +16,43 @@ if (window.__ytAiHelperLoaded) {
 function initHelper() {
   createFloatingButton();
   createHelperPanel();
+  createLiveRegion();
+}
 
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// ─── 화면낭독기용 알림 영역 ──────────────────────────────────────────────────
+// aria-live 영역은 매번 새로 만들면 읽히지 않는 경우가 많아서, 처음에 한 번 만들어
+// 두고 글자만 바꾼다.
+
+function createLiveRegion() {
+  const live = document.createElement('div');
+  live.id = 'ytai-live';
+  live.className = 'ytai-sr-only';
+  live.setAttribute('role', 'status');
+  live.setAttribute('aria-live', 'polite');
+  document.body.appendChild(live);
+}
+
+function announce(text) {
+  const live = document.getElementById('ytai-live');
+  if (!live || !text) return;
+  // 같은 문장이 연달아 와도 다시 읽히도록 비웠다가 채운다
+  live.textContent = '';
+  setTimeout(() => { live.textContent = text; }, 50);
 }
 
 // ─── Floating button ─────────────────────────────────────────────────────────
 
 function createFloatingButton() {
-  const btn = document.createElement('div');
+  const btn = document.createElement('button');
+  btn.type = 'button';
   btn.id = 'ytai-btn';
+  btn.setAttribute('aria-haspopup', 'dialog');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'ytai-panel');
   btn.innerHTML = `<span class="ytai-btn-icon"></span><span class="ytai-btn-label">${t('floatingBtnLabel')}</span>`;
   btn.addEventListener('click', togglePanel);
   document.body.appendChild(btn);
@@ -34,16 +63,19 @@ function createFloatingButton() {
 function createHelperPanel() {
   const panel = document.createElement('div');
   panel.id = 'ytai-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-labelledby', 'ytai-panel-title');
+  panel.tabIndex = -1;
   panel.innerHTML = `
     <div class="ytai-panel-header">
-      <span>${t('panelHeaderTitle')}</span>
-      <button class="ytai-close-btn" id="ytai-panel-close">✕</button>
+      <span id="ytai-panel-title">${t('panelHeaderTitle')}</span>
+      <button type="button" class="ytai-close-btn" id="ytai-panel-close" aria-label="${t('closeLabel')}"><span aria-hidden="true">✕</span></button>
     </div>
     <div class="ytai-panel-body" id="ytai-panel-body">
       <div class="ytai-autoclick-row">
         <span class="ytai-autoclick-label">${t('autoClickLabel')}</span>
         <label class="ytai-switch">
-          <input type="checkbox" id="ytai-autoclick-chk">
+          <input type="checkbox" id="ytai-autoclick-chk" aria-label="${t('autoClickLabel')}">
           <span class="ytai-slider"></span>
         </label>
       </div>
@@ -121,6 +153,13 @@ function createHelperPanel() {
   });
 
   document.getElementById('ytai-panel-close').addEventListener('click', hidePanel);
+  // Esc는 포커스가 패널 안에 있을 때만 받는다 (유튜브 메뉴 닫기 등과 겹치지 않게)
+  panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      hidePanel();
+    }
+  });
   document.getElementById('ytai-voice-btn').addEventListener('click', startVoice);
   document.getElementById('ytai-send-btn').addEventListener('click', () => {
     const val = document.getElementById('ytai-input').value.trim();
@@ -137,11 +176,25 @@ function createHelperPanel() {
 
 function togglePanel() {
   const panel = document.getElementById('ytai-panel');
-  panel.classList.toggle('ytai-panel-visible');
+  if (panel.classList.contains('ytai-panel-visible')) {
+    hidePanel();
+    return;
+  }
+  panel.classList.add('ytai-panel-visible');
+  document.getElementById('ytai-btn')?.setAttribute('aria-expanded', 'true');
+  // 키보드·화면낭독기 사용자가 바로 패널 안에서 시작하도록 포커스를 옮긴다
+  panel.focus();
 }
 
 function hidePanel() {
-  document.getElementById('ytai-panel')?.classList.remove('ytai-panel-visible');
+  const panel = document.getElementById('ytai-panel');
+  if (!panel) return;
+  const hadFocus = panel.contains(document.activeElement);
+  panel.classList.remove('ytai-panel-visible');
+  const btn = document.getElementById('ytai-btn');
+  btn?.setAttribute('aria-expanded', 'false');
+  // 패널 안에 있던 포커스는 도움받기 버튼으로 돌려준다 (버튼이 숨겨져 있으면 무시됨)
+  if (hadFocus) btn?.focus();
 }
 
 function resetPanel() {
@@ -435,22 +488,55 @@ function findElementByTextContent(text) {
       return keywords.some(k => k.length >= 2 && all.includes(k) && all.length < k.length * 5);
     },
   ]) {
-    for (const el of candidates) {
-      if (!pass(el)) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) return el;
-    }
+    const el = pickOnScreen([...candidates].filter(pass));
+    if (el) return el;
   }
   return null;
 }
 
+// ─── 화면 안의 요소 고르기 ───────────────────────────────────────────────────
+// 쇼츠는 앞뒤 영상을 미리 불러와서 좋아요·구독 같은 버튼이 여러 벌 있고,
+// 일반 영상 화면도 스크롤하면 버튼이 화면 밖으로 나간다. 크기만 보고 첫 번째를
+// 고르면 화면 밖 버튼을 가리키게 되므로, 스냅샷(getPageSnapshot)과 같은 기준으로
+// 지금 화면에 보이는 것을 우선한다.
+
+function isInViewport(el) {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return false;
+  return r.right > 0 && r.bottom > 0 && r.left < window.innerWidth && r.top < window.innerHeight;
+}
+
+function isShortsPage() {
+  return location.pathname.startsWith('/shorts');
+}
+
+function pickOnScreen(elements) {
+  const sized = elements.filter(el => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  });
+  if (!sized.length) return null;
+
+  let onScreen = sized.filter(isInViewport);
+  // 쇼츠를 넘기는 도중에는 다음 쇼츠가 화면에 반쯤 걸쳐 있을 수 있다.
+  // 지금 재생 중인 쇼츠 안에 후보가 있으면 그것만 쓴다.
+  const activeReel = document.querySelector('ytd-reel-video-renderer[is-active]');
+  if (activeReel) {
+    const inReel = onScreen.filter(el => activeReel.contains(el));
+    if (inReel.length) onScreen = inReel;
+  }
+  if (onScreen.length) return onScreen[0];
+
+  // 화면 안에 없으면 일반 화면에서는 화면 밖 요소라도 돌려준다(호출하는 쪽에서
+  // 스크롤해서 보여 줌). 쇼츠에서는 화면 밖 요소가 다른 쇼츠의 버튼이므로 쓰지 않는다.
+  return isShortsPage() ? null : sized[0];
+}
+
 function findTargetElement(elementType, elementText) {
-  // 1. CSS 선택자 - querySelectorAll로 모든 후보 중 첫 번째 visible 반환
+  // 1. CSS 선택자 - 후보 중 화면에 보이는 것 우선
   if (elementType && ELEMENT_SELECTORS[elementType]) {
-    for (const el of document.querySelectorAll(ELEMENT_SELECTORS[elementType])) {
-      const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) return el;
-    }
+    const el = pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS[elementType])]);
+    if (el) return el;
   }
   // 2. element_text (AI가 스냅샷에서 골라준 정확한 텍스트)
   if (elementText) {
@@ -547,14 +633,10 @@ function attachClickAdvance(elementType, elementText) {
 }
 
 function findByTextElement(texts) {
+  const all = [...document.querySelectorAll('a, button, span, yt-formatted-string, ytd-guide-entry-renderer')];
   for (const text of texts) {
-    const all = document.querySelectorAll('a, button, span, yt-formatted-string, ytd-guide-entry-renderer');
-    for (const el of all) {
-      if (el.textContent.trim() === text) {
-        const rect = el.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) return el;
-      }
-    }
+    const el = pickOnScreen(all.filter(e => e.textContent.trim() === text));
+    if (el) return el;
   }
   return null;
 }
@@ -582,6 +664,27 @@ function advanceStep() {
 }
 
 
+// ─── 자동 클릭 안전 장치 ─────────────────────────────────────────────────────
+// 자동 클릭은 되돌리기 쉬운 버튼 종류만 허용한다. "위험한 것 막기"(단어 블랙리스트)는
+// 빠지는 게 생기고 "음소거 해제" 같은 멀쩡한 버튼까지 걸리므로 허용 목록 방식을 쓴다.
+// 구독(누르면 구독 취소가 될 수 있음)·싫어요, 그리고 종류 없이 이름만 있는 단계는
+// 사용자가 직접 눌러야 한다.
+const AUTO_CLICK_SAFE_TYPES = new Set([
+  'play', 'volume', 'subtitles', 'settings', 'fullscreen', 'theater', 'next_video',
+  'miniplayer', 'search', 'like', 'save', 'share', 'more_actions', 'home',
+  'subscriptions', 'library', 'history', 'shorts', 'playlists_tab',
+]);
+// 허용된 종류여도 선택자/이름 매칭이 엉뚱한 버튼을 잡았을 때를 대비한 2차 방어선
+const RISKY_LABEL = /구독\s*취소|삭제|제거|신고|차단|로그아웃|unsubscribe|delete|remove|report|block|sign out/i;
+
+function canAutoClick(elementType, elementText) {
+  if (!AUTO_CLICK_SAFE_TYPES.has(elementType)) return false;
+  const el = findTargetElement(elementType, elementText);
+  if (!el) return false;
+  const label = el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || '';
+  return !RISKY_LABEL.test(label);
+}
+
 function cancelAutoClick() {
   if (_autoClickTimer) { clearInterval(_autoClickTimer); _autoClickTimer = null; }
 }
@@ -600,8 +703,14 @@ function startAutoClickCountdown(elementType, elementText) {
     } else {
       clearInterval(_autoClickTimer);
       _autoClickTimer = null;
-      const el = findTargetElement(elementType, elementText);
-      if (el) el.click();
+      // 카운트다운 사이에 화면이 바뀌었을 수 있으니 누르기 직전에 한 번 더 확인
+      if (!canAutoClick(elementType, elementText)) {
+        const btn = document.getElementById('ytai-instr-ok');
+        if (btn) btn.textContent = t('skipBtn');
+        attachClickAdvance(elementType, elementText);
+        return;
+      }
+      findTargetElement(elementType, elementText).click();
       setTimeout(() => advanceStep(), 300);
     }
   }, 1000);
@@ -668,8 +777,15 @@ function showStep(index) {
   const total = _steps.length;
   const eType = step.element_type ?? null;
   const eText = step.element_text ?? null;
+  const hasTarget = !!(eType || eText);
+  const autoClickHere = _autoClick && hasTarget && canAutoClick(eType, eText);
 
-  if (eType || eText) {
+  if (hasTarget) {
+    // 일반 영상 화면에서 스크롤로 버튼이 화면 밖에 있으면 보이는 곳으로 가져온다
+    const targetEl = findTargetElement(eType, eText);
+    if (targetEl && !isInViewport(targetEl)) {
+      targetEl.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    }
     const pos = getElementCenter(eType, eText);
     const initX = pos?.x ?? -999;
     const initY = pos?.y ?? -999;
@@ -690,9 +806,8 @@ function showStep(index) {
     }
     document.body.appendChild(overlay);
     startTracking(eType, eText);
-    if (_autoClick) {
-      // 자동 클릭 모드: 카운트다운 후 자동 클릭
-    } else if (!isLast) {
+    // 자동 클릭 모드면 카운트다운 후 자동 클릭, 아니면 사용자가 누를 때 다음 단계로
+    if (!autoClickHere && !isLast) {
       attachClickAdvance(eType, eText);
     }
   }
@@ -703,21 +818,27 @@ function showStep(index) {
     ? `<div class="ytai-step-indicator">${index + 1} / ${total}</div>`
     : '';
 
-  const btnLabel = isLast ? t('confirmBtn') : (_autoClick && (eType || eText) ? t('autoClickCountdown').replace('{n}', 2) : ((eType || eText) ? t('skipBtn') : t('nextBtn')));
+  const btnLabel = isLast ? t('confirmBtn') : (autoClickHere ? t('autoClickCountdown').replace('{n}', 2) : (hasTarget ? t('skipBtn') : t('nextBtn')));
+  // 자동 클릭을 켰지만 이 버튼은 안전 목록 밖이라 직접 눌러야 하는 경우
+  const manualNote = _autoClick && hasTarget && !autoClickHere
+    ? `<div class="ytai-instr-note">${t('autoClickManualNote')}</div>`
+    : '';
 
   box.innerHTML = `
     ${stepIndicator}
     <div class="ytai-instr-text">${escapeHtml(step.instruction ?? t('fallbackInstruction'))}</div>
-    <button id="ytai-instr-ok">${btnLabel}</button>
+    ${manualNote}
+    <button id="ytai-instr-ok" type="button">${btnLabel}</button>
   `;
   document.body.appendChild(box);
+  announce(step.instruction ?? t('fallbackInstruction'));
 
   document.getElementById('ytai-instr-ok').addEventListener('click', () => {
     cancelAutoClick();
     advanceStep();
   });
 
-  if (_autoClick && (eType || eText)) {
+  if (autoClickHere) {
     startAutoClickCountdown(eType, eText);
   }
 }
@@ -735,6 +856,7 @@ function showErrorToast(message) {
   toast.id = 'ytai-toast';
   toast.textContent = message;
   document.body.appendChild(toast);
+  announce(message);
 
   setTimeout(() => toast.remove(), 4000);
 }

@@ -14,6 +14,7 @@
   "popupFeature4":        { "message": "자동 클릭" },
   "popupFooter":          { "message": "별도 설정 없이 바로 사용 가능합니다" },
 
+  "closeLabel":           { "message": "닫기" },
   "floatingBtnLabel":     { "message": "도움받기" },
   "panelHeaderTitle":     { "message": "무엇을 도와드릴까요?" },
   "autoClickLabel":       { "message": "자동 클릭" },
@@ -44,6 +45,7 @@
   "confirmBtn":           { "message": "확인" },
   "skipBtn":              { "message": "건너뛰기" },
   "nextBtn":              { "message": "다음 →" },
+  "autoClickManualNote":  { "message": "자동 클릭은 안전한 버튼에만 해요. 이 버튼은 직접 눌러 주세요." },
   "autoClickCountdown":   { "message": "{n}초 후 자동 클릭" },
   "quickActionInstruction": { "message": "{label} 버튼입니다. 클릭하세요." },
   "notFoundToast":        { "message": "'{label}' 버튼을 이 화면에서 찾을 수 없어요." },

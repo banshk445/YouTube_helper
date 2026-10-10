@@ -14,6 +14,7 @@
   "popupFeature4":        { "message": "Auto-click" },
   "popupFooter":          { "message": "Works right away — no setup needed" },
 
+  "closeLabel":           { "message": "Close" },
   "floatingBtnLabel":     { "message": "Get Help" },
   "panelHeaderTitle":     { "message": "What can I help with?" },
   "autoClickLabel":       { "message": "Auto-click" },
@@ -44,6 +45,7 @@
   "confirmBtn":           { "message": "OK" },
   "skipBtn":              { "message": "Skip" },
   "nextBtn":              { "message": "Next →" },
+  "autoClickManualNote":  { "message": "Auto-click only presses safe buttons. Please press this one yourself." },
   "autoClickCountdown":   { "message": "Auto-click in {n}s" },
   "quickActionInstruction": { "message": "This is the {label} button. Click it." },
   "notFoundToast":        { "message": "Couldn't find the '{label}' button on this screen." },
