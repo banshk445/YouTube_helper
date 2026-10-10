@@ -6,3 +6,9 @@ node_modules/
 # Worker — API 키가 들어가는 파일들
 .dev.vars
 .wrangler/
+
+# 테스트
+tests/screenshots/
+
+# 확장 프로그램 개인 키 — 절대 올리지 말 것
+*.pem

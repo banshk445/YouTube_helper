@@ -144,6 +144,8 @@ Anthropic 콘솔에서 월 사용 한도를 낮게 걸어 두는 것을 권장�
 | `docs/` | 개인정보처리방침 (GitHub Pages) |
 | `icons/`, `store-assets/` | 아이콘, 웹스토어 등록용 이미지 |
 | `pack.sh` | 웹스토어 업로드용 zip 생성 |
+| `tests/` | 가짜 유튜브 화면에서 주요 기능을 확인하는 테스트 (`npm test`) |
+| `tools/` | 개발용 도구 (아이콘 생성 페이지) |
 
 ## 기술 스택
 
@@ -157,10 +159,13 @@ Anthropic 콘솔에서 월 사용 한도를 낮게 걸어 두는 것을 권장�
 
 ## 개발 메모
 
+함께 작업하는 방법(설치, 브랜치·PR 규칙, 지켜 온 원칙, 대회 제출용 AI 활용 기록)은 [CONTRIBUTING.md](CONTRIBUTING.md)에 정리되어 있습니다.
+
 - **안내 문구나 AI 동작을 바꿀 때**는 `worker/src/index.js`의 프롬프트만 고치고 `wrangler deploy` 하면 됩니다. 확장 프로그램을 다시 배포할 필요가 없습니다.
 - **유튜브 화면이 바뀌어 버튼을 못 찾을 때**는 `content.js`의 `ELEMENT_SELECTORS`를 고칩니다.
 - **문구를 추가할 때**는 `_locales/ko`와 `_locales/en` 양쪽에 같은 키를 넣습니다.
 - **웹스토어용 zip**은 `./pack.sh`로 만듭니다.
+- **올리기 전**에 `npm install && npm test`로 가짜 유튜브 화면 테스트를 돌립니다.
 
 ## 문의
 
