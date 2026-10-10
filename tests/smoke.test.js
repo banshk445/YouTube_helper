@@ -242,5 +242,14 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.waitForTimeout(300);
   check('xlarge panel fits without inner scroll? ' + await page.evaluate(() => { const p = document.getElementById('ytai-panel'); return p.scrollHeight + '/' + p.clientHeight; }), true);
   await page.screenshot({ path: path.join(SHOTS, 'panel-xlarge.png') });
+
+  // 12. 도우미 자신의 버튼은 AI에게 보내지 않고, 가리키지도 않는다
+  html = watch;
+  await load('https://www.youtube.com/watch?v=x');
+  await page.waitForTimeout(100);
+  await page.evaluate(() => togglePanel());
+  const snapTexts = await page.evaluate(() => getPageSnapshot().map(e => e.t));
+  check('snapshot excludes own UI ' + JSON.stringify(snapTexts), !snapTexts.some(t => /^(zoomInLabel|zoomOutLabel|closeLabel)$/.test(t)) && snapTexts.includes('재생'));
+  check('finder never points at own close button', await page.evaluate(() => findElementByTextContent('closeLabel')) === null);
   await browser.close();
 })();

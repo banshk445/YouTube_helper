@@ -714,6 +714,7 @@ function getPageSnapshot() {
     for (const el of document.querySelectorAll(sel)) {
       if (seen.has(el)) continue;
       seen.add(el);
+      if (isOwnUi(el)) continue;
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
       if (rect.bottom < -100 || rect.top > window.innerHeight + 100) continue;
@@ -887,6 +888,14 @@ function findElementByTextContent(text) {
 // 고르면 화면 밖 버튼을 가리키게 되므로, 스냅샷(getPageSnapshot)과 같은 기준으로
 // 지금 화면에 보이는 것을 우선한다.
 
+// 도우미 자신이 그린 요소. 가+/가-·닫기 버튼처럼 aria-label이 붙어 있어서
+// 걸러 내지 않으면 AI에게 "유튜브 버튼"으로 보내지고, 안내가 도우미 버튼을 가리키게 된다.
+const OWN_UI = '#ytai-dock, #ytai-panel, #ytai-overlay, #ytai-instruction, #ytai-toast, #ytai-live';
+
+function isOwnUi(el) {
+  return !!el.closest(OWN_UI);
+}
+
 function isInViewport(el) {
   const r = el.getBoundingClientRect();
   if (r.width === 0 || r.height === 0) return false;
@@ -899,6 +908,7 @@ function isShortsPage() {
 
 function pickOnScreen(elements) {
   const sized = elements.filter(el => {
+    if (isOwnUi(el)) return false;
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
   });
