@@ -18,6 +18,33 @@ function initHelper() {
   createHelperPanel();
   createLiveRegion();
   loadViewSettings();
+  listenForShortcuts();
+}
+
+// ─── 단축키 (보조 수단) ──────────────────────────────────────────────────────
+// manifest의 commands → background.js가 받아서 이 탭으로 전달한다.
+// 확장 단축키는 크롬이 먼저 가로채므로 전체화면에서도 동작한다.
+
+function listenForShortcuts() {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type !== 'YTAI_COMMAND') return;
+    if (msg.command === 'toggle-helper') togglePanel();
+    else if (msg.command === 'zoom-in') stepViewSize(1);
+    else if (msg.command === 'zoom-out') stepViewSize(-1);
+  });
+
+  // 버튼에 마우스를 올리면 단축키를 보여 준다. 사용자가 chrome://extensions/shortcuts에서
+  // 바꿨을 수 있으므로 실제 지정된 키를 background에 물어본다 (content script에서는 chrome.commands를 못 씀).
+  chrome.runtime.sendMessage({ type: 'GET_SHORTCUTS' }, (res) => {
+    if (chrome.runtime.lastError || !res) return;
+    const hint = (id, cmd) => {
+      const el = document.getElementById(id);
+      if (el && res[cmd]) el.title = `${el.title || el.getAttribute('aria-label') || ''} (${res[cmd]})`.trim();
+    };
+    hint('ytai-btn', 'toggle-helper');
+    hint('ytai-zoom-in', 'zoom-in');
+    hint('ytai-zoom-out', 'zoom-out');
+  });
 }
 
 function prefersReducedMotion() {
@@ -55,6 +82,7 @@ function createDock() {
   const zoomOut = document.createElement('button');
   zoomOut.type = 'button';
   zoomOut.className = 'ytai-zoom-btn';
+  zoomOut.id = 'ytai-zoom-out';
   zoomOut.innerHTML = '<span aria-hidden="true">가<small>−</small></span>';
   zoomOut.setAttribute('aria-label', t('zoomOutLabel'));
   zoomOut.title = t('zoomOutLabel');
@@ -63,6 +91,7 @@ function createDock() {
   const zoomIn = document.createElement('button');
   zoomIn.type = 'button';
   zoomIn.className = 'ytai-zoom-btn';
+  zoomIn.id = 'ytai-zoom-in';
   zoomIn.innerHTML = '<span aria-hidden="true">가<small>+</small></span>';
   zoomIn.setAttribute('aria-label', t('zoomInLabel'));
   zoomIn.title = t('zoomInLabel');
@@ -79,6 +108,7 @@ function createFloatingButton() {
   btn.setAttribute('aria-haspopup', 'dialog');
   btn.setAttribute('aria-expanded', 'false');
   btn.setAttribute('aria-controls', 'ytai-panel');
+  btn.title = t('floatingBtnLabel');
   btn.innerHTML = `<span class="ytai-btn-icon"></span><span class="ytai-btn-label">${t('floatingBtnLabel')}</span>`;
   btn.addEventListener('click', togglePanel);
   return btn;
@@ -123,11 +153,11 @@ function createHelperPanel() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="7" y1="11" x2="11" y2="11"/><line x1="13" y1="11" x2="17" y2="11"/><line x1="7" y1="15" x2="10" y2="15"/></svg>
           <span>${t('quickSubtitles')}</span>
         </button>
-        <button class="ytai-quick-btn" data-type="fullscreen" data-label="${t('quickFullscreen')}">
+        <button class="ytai-quick-btn" data-slot="a" data-type="fullscreen" data-label="${t('quickFullscreen')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           <span>${t('quickFullscreen')}</span>
         </button>
-        <button class="ytai-quick-btn" data-type="next_video" data-label="${t('quickNext')}">
+        <button class="ytai-quick-btn" data-slot="b" data-type="next_video" data-label="${t('quickNext')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
           <span>${t('quickNext')}</span>
         </button>
@@ -212,6 +242,7 @@ function togglePanel() {
     hidePanel();
     return;
   }
+  updateQuickGridForPage();
   panel.classList.add('ytai-panel-visible');
   document.getElementById('ytai-btn')?.setAttribute('aria-expanded', 'true');
   // 키보드·화면낭독기 사용자가 바로 패널 안에서 시작하도록 포커스를 옮긴다
@@ -509,9 +540,87 @@ function startVoice() {
   recognition.start();
 }
 
+// ─── 말로 설정 바꾸기 (AI 서버로 보내지 않고 직접 처리) ─────────────────────
+// "글씨 크게 해 줘", "소리로 읽어 줘" 같은 짧은 명령은 여기서 바로 처리한다. 빠르고 비용이 없다.
+// "자막 크게 하는 법 알려줘" 같은 진짜 질문까지 가로채지 않도록, 끝말(해 줘·주세요 등)을
+// 떼어 낸 뒤 문장 전체가 명령 모양과 정확히 맞을 때만 처리한다.
+
+const LOCAL_COMMANDS = {
+  ko: [
+    [/^(글씨|글자)?(를|을)?더?(크게|키워|확대)$/,               () => stepViewSize(1)],
+    [/^(글씨|글자)?(를|을)?더?(작게|줄여|축소)$/,               () => stepViewSize(-1)],
+    [/^(안내)?(를|을)?(소리로|소리내서|음성으로)?읽어$|^(소리로읽기|읽어주기)(를|을)?켜$/, () => setTtsFromCommand(true)],
+    [/^(소리로읽기|읽어주기|소리|음성|읽기)(를|을)?(꺼|그만)$|^그만읽어$|^읽지마$/, () => setTtsFromCommand(false)],
+    [/^(고대비|노란색|노랑|노랑검정)(으로|로|색으로)?(바꿔|켜)?$/, () => setColorFromCommand('contrast')],
+    [/^(기본색|원래색|기본|원래)(으로|색으로)?(바꿔|돌려)?$/,             () => setColorFromCommand('default')],
+    [/^자막(을|를)?더?(크게|키워)$/,                             () => captionFromCommand(1)],
+    [/^자막(을|를)?더?(작게|줄여)$/,                             () => captionFromCommand(-1)],
+    [/^보기설정(열어)?$/,                                         () => { openSettings(); return true; }],
+  ],
+  en: [
+    [/^(make )?(the )?(text )?(bigger|larger)$|^zoom in$|^(increase|enlarge) (the )?text( size)?$/, () => stepViewSize(1)],
+    [/^(make )?(the )?(text )?smaller$|^zoom out$|^(decrease|reduce) (the )?text( size)?$/,          () => stepViewSize(-1)],
+    [/^(turn on )?read( it)?( out)? aloud$|^read (it )?to me$|^read aloud on$/,                   () => setTtsFromCommand(true)],
+    [/^(turn off read aloud|stop reading|read aloud off|don't read)$/,                              () => setTtsFromCommand(false)],
+    [/^(turn on )?high contrast( mode)?$|^yellow( and black)?$/,                                    () => setColorFromCommand('contrast')],
+    [/^(default|normal) colou?rs?$/,                                                               () => setColorFromCommand('default')],
+    [/^(make )?(the )?(captions|subtitles) (bigger|larger)$|^(bigger|larger) (captions|subtitles)$/, () => captionFromCommand(1)],
+    [/^(make )?(the )?(captions|subtitles) smaller$|^smaller (captions|subtitles)$/,                 () => captionFromCommand(-1)],
+    [/^(open )?display settings$/,                                                                 () => { openSettings(); return true; }],
+  ],
+};
+
+function normalizeCommand(text) {
+  if (YTAI_LANG === 'en') {
+    return text.toLowerCase().replace(/[.,!?~]/g, ' ').replace(/\b(please|can you|could you|for me)\b/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+  }
+  let n = text.replace(/[\s.,!?~]/g, '').replace(/좀/g, '');
+  // 끝말 떼기: "크게해줘요" → "크게", "읽어주세요" → "읽어"
+  let prev;
+  do {
+    prev = n;
+    n = n.replace(/(해주세요|해주실래요|해줄래|해주라|해줘요|해줘|해요|주세요|줄래|줘요|줘|해|요)$/, '');
+  } while (n !== prev && n.length > 0);
+  return n;
+}
+
+function handleLocalCommand(text) {
+  const n = normalizeCommand(text);
+  if (!n || n.length > 20) return false;
+  for (const [re, run] of LOCAL_COMMANDS[YTAI_LANG]) {
+    if (re.test(n)) {
+      run();
+      return true;
+    }
+  }
+  return false;
+}
+
+function setTtsFromCommand(on) {
+  if (on && !('speechSynthesis' in window)) { showToast(t('ttsUnsupported')); return; }
+  setView('tts', on);
+  showToast(t(on ? 'ttsOnSample' : 'ttsOffToast'));
+}
+
+function setColorFromCommand(color) {
+  setView('color', color);
+  showToast(t(color === 'contrast' ? 'colorContrastToast' : 'colorDefaultToast'));
+}
+
+function captionFromCommand(dir) {
+  showToast(changeCaptionSize(dir) ? t(dir > 0 ? 'captionBiggerToast' : 'captionSmallerToast') : t('captionOffToast'));
+}
+
 // ─── Submit request ───────────────────────────────────────────────────────────
 
 function submitRequest(userRequest) {
+  if (handleLocalCommand(userRequest)) {
+    // 입력창만 비우고 패널은 그대로 둔다 (바뀐 크기·색을 바로 볼 수 있게)
+    document.getElementById('ytai-input').value = '';
+    document.getElementById('ytai-voice-status').textContent = '';
+    return;
+  }
   document.getElementById('ytai-panel-body').classList.add('ytai-loading-mode');
   document.getElementById('ytai-loading').style.display = 'flex';
 
@@ -655,6 +764,9 @@ const ELEMENT_SELECTORS = {
   library:       'ytd-guide-entry-renderer a[href="/feed/library"], ytd-mini-guide-entry-renderer a[href="/feed/library"]',
   history:       'ytd-guide-entry-renderer a[href="/feed/history"], ytd-mini-guide-entry-renderer a[href="/feed/history"]',
   shorts:        'ytd-guide-entry-renderer a[href="/shorts"], ytd-mini-guide-entry-renderer a[href="/shorts"]',
+  // 데스크톱 쇼츠 화면 오른쪽의 위/아래 이동 버튼
+  next_short:    '#navigation-button-down button, #navigation-button-down [role="button"]',
+  prev_short:    '#navigation-button-up button, #navigation-button-up [role="button"]',
 };
 
 const TEXT_FALLBACKS = {
@@ -936,6 +1048,7 @@ const AUTO_CLICK_SAFE_TYPES = new Set([
   'play', 'volume', 'subtitles', 'settings', 'fullscreen', 'theater', 'next_video',
   'miniplayer', 'search', 'like', 'save', 'share', 'more_actions', 'home',
   'subscriptions', 'library', 'history', 'shorts', 'playlists_tab',
+  'next_short', 'prev_short',
 ]);
 // 허용된 종류여도 선택자/이름 매칭이 엉뚱한 버튼을 잡았을 때를 대비한 2차 방어선
 const RISKY_LABEL = /구독\s*취소|삭제|제거|신고|차단|로그아웃|unsubscribe|delete|remove|report|block|sign out/i;
@@ -979,8 +1092,61 @@ function startAutoClickCountdown(elementType, elementText) {
   }, 1000);
 }
 
+// ─── 쇼츠 전용 빠른 버튼 ─────────────────────────────────────────────────────
+// 쇼츠에는 "다음 영상" 버튼이 없고, 데스크톱 쇼츠에는 전체화면 버튼도 없다.
+// 쇼츠 화면에서는 이 두 칸을 "이전 쇼츠 / 다음 쇼츠"로 바꾸고, 가리키는 대신 도우미가 직접 넘긴다.
+
+const QUICK_SLOTS = {
+  normal: {
+    a: { type: 'fullscreen', label: 'quickFullscreen', icon: '<polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>' },
+    b: { type: 'next_video', label: 'quickNext', icon: '<polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/>' },
+  },
+  shorts: {
+    a: { type: 'prev_short', label: 'quickPrevShort', icon: '<polyline points="18,15 12,9 6,15"/>' },
+    b: { type: 'next_short', label: 'quickNextShort', icon: '<polyline points="6,9 12,15 18,9"/>' },
+  },
+};
+
+function updateQuickGridForPage() {
+  const mode = isShortsPage() ? 'shorts' : 'normal';
+  const grid = document.querySelector('#ytai-panel .ytai-quick-grid');
+  if (!grid || grid.dataset.mode === mode) return;
+  grid.dataset.mode = mode;
+  for (const [slot, def] of Object.entries(QUICK_SLOTS[mode])) {
+    const btn = grid.querySelector(`[data-slot="${slot}"]`);
+    if (!btn) continue;
+    btn.dataset.type = def.type;
+    btn.dataset.label = t(def.label);
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${def.icon}</svg><span>${t(def.label)}</span>`;
+  }
+}
+
+// 다음/이전 쇼츠로 넘기기. 1) 유튜브의 위/아래 이동 버튼 2) 없으면 옆 쇼츠로 스크롤
+function goShorts(dir) {
+  const btn = pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS[dir > 0 ? 'next_short' : 'prev_short'])]);
+  if (btn) {
+    btn.click();
+  } else {
+    const active = document.querySelector('ytd-reel-video-renderer[is-active]');
+    let sib = active && (dir > 0 ? active.nextElementSibling : active.previousElementSibling);
+    while (sib && sib.tagName !== 'YTD-REEL-VIDEO-RENDERER') sib = dir > 0 ? sib.nextElementSibling : sib.previousElementSibling;
+    if (!sib) {
+      showToast(t(dir > 0 ? 'noNextShortToast' : 'noPrevShortToast'));
+      return false;
+    }
+    sib.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }
+  showToast(t(dir > 0 ? 'nextShortToast' : 'prevShortToast'));
+  return true;
+}
+
 function quickAction(elementType, label) {
   hidePanel();
+
+  if (elementType === 'next_short' || elementType === 'prev_short') {
+    goShorts(elementType === 'next_short' ? 1 : -1);
+    return;
+  }
 
   // 홈·구독·보관함·검색은 버튼이 안 보일 때 직접 이동
   const NAV_URLS = {

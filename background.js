@@ -65,3 +65,21 @@ async function callClaude(userRequest, pageType, snapshot, lang, signal) {
   return { steps: data.steps };
 }
 
+
+
+// ─── 단축키 (manifest commands) ──────────────────────────────────────────────
+// 단축키는 서비스 워커로 들어오므로 지금 보고 있는 탭의 content script로 전달한다.
+// 유튜브가 아닌 탭에서는 받을 곳이 없어서 실패하는데, 그냥 무시하면 된다.
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (!tab?.id) return;
+  chrome.tabs.sendMessage(tab.id, { type: 'YTAI_COMMAND', command }).catch(() => {});
+});
+
+// content script는 chrome.commands를 못 쓰므로, 버튼 툴팁에 보여 줄 실제 단축키를 대신 알려 준다.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'GET_SHORTCUTS') return;
+  chrome.commands.getAll().then((cmds) => {
+    sendResponse(Object.fromEntries(cmds.filter(c => c.shortcut).map(c => [c.name, c.shortcut])));
+  });
+  return true; // 비동기 응답
+});

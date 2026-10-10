@@ -81,6 +81,19 @@
   "sizeMaxToast":        { "message": "The helper text is already the largest." },
   "sizeMinToast":        { "message": "The helper text is already the smallest." },
 
+  "quickPrevShort":      { "message": "Prev Short" },
+  "quickNextShort":      { "message": "Next Short" },
+  "nextShortToast":      { "message": "Moved to the next Short." },
+  "prevShortToast":      { "message": "Moved to the previous Short." },
+  "noNextShortToast":    { "message": "There's no next Short." },
+  "noPrevShortToast":    { "message": "There's no previous Short." },
+  "ttsOffToast":         { "message": "Read aloud is off." },
+  "colorContrastToast":  { "message": "Highlight color set to yellow & black." },
+  "colorDefaultToast":   { "message": "Highlight color set to default." },
+  "cmdToggleHelper":     { "message": "Open/close the helper" },
+  "cmdZoomIn":           { "message": "Bigger helper text (and captions)" },
+  "cmdZoomOut":          { "message": "Smaller helper text (and captions)" },
+
   "noTabError":           { "message": "No tab info" },
   "noStepsError":         { "message": "Couldn't understand the response. Please try again." },
   "serverErrorPrefix":    { "message": "AI server error" }

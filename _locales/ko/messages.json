@@ -81,6 +81,19 @@
   "sizeMaxToast":        { "message": "도우미 글씨는 이미 가장 커요." },
   "sizeMinToast":        { "message": "도우미 글씨는 이미 가장 작아요." },
 
+  "quickPrevShort":      { "message": "이전 쇼츠" },
+  "quickNextShort":      { "message": "다음 쇼츠" },
+  "nextShortToast":      { "message": "다음 쇼츠로 넘겼어요." },
+  "prevShortToast":      { "message": "이전 쇼츠로 넘겼어요." },
+  "noNextShortToast":    { "message": "다음 쇼츠가 없어요." },
+  "noPrevShortToast":    { "message": "이전 쇼츠가 없어요." },
+  "ttsOffToast":         { "message": "소리로 읽기를 껐어요." },
+  "colorContrastToast":  { "message": "강조색을 노랑·검정으로 바꿨어요." },
+  "colorDefaultToast":   { "message": "강조색을 기본으로 바꿨어요." },
+  "cmdToggleHelper":     { "message": "도우미 열기/닫기" },
+  "cmdZoomIn":           { "message": "도우미 글씨 크게 (자막 포함)" },
+  "cmdZoomOut":          { "message": "도우미 글씨 작게 (자막 포함)" },
+
   "noTabError":           { "message": "탭 정보 없음" },
   "noStepsError":         { "message": "응답을 이해하지 못했어요. 다시 시도해주세요." },
   "serverErrorPrefix":    { "message": "AI 서버 오류" }

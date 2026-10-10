@@ -27,6 +27,20 @@
       "run_at": "document_idle"
     }
   ],
+  "commands": {
+    "toggle-helper": {
+      "suggested_key": { "default": "Alt+Shift+H" },
+      "description": "__MSG_cmdToggleHelper__"
+    },
+    "zoom-in": {
+      "suggested_key": { "default": "Alt+Shift+Up" },
+      "description": "__MSG_cmdZoomIn__"
+    },
+    "zoom-out": {
+      "suggested_key": { "default": "Alt+Shift+Down" },
+      "description": "__MSG_cmdZoomOut__"
+    }
+  },
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "__MSG_extName__",
