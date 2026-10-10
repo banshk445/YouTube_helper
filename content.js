@@ -5,6 +5,8 @@ const AREA = YTAI_LANG === 'en'
   ? { main: 'main', player: 'player', sidebar: 'sidebar', header: 'header', right: 'right' }
   : { main: '메인', player: '플레이어', sidebar: '사이드바', header: '헤더', right: '우측' };
 
+const MIC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+
 // Prevent double injection
 if (window.__ytAiHelperLoaded) {
   // already loaded
@@ -14,19 +16,128 @@ if (window.__ytAiHelperLoaded) {
 }
 
 function initHelper() {
-  createFloatingButton();
+  createDock();
   createHelperPanel();
-
+  createLiveRegion();
+  loadViewSettings();
+  listenForShortcuts();
+  watchMiniplayer();
 }
 
-// ─── Floating button ─────────────────────────────────────────────────────────
+// ─── 미니플레이어 피하기 ─────────────────────────────────────────────────────
+// 유튜브 미니플레이어도 화면 오른쪽 아래에 뜬다. 떠 있으면 버튼 묶음(가-/가+/도움받기)과
+// 패널·알림을 그 위로 올린다. 위치는 content.css의 --ytai-dock-bottom 변수.
+
+function watchMiniplayer() {
+  const update = () => {
+    const r = document.querySelector('ytd-miniplayer')?.getBoundingClientRect();
+    const inCorner = r && r.width > 0 && r.height > 0 &&
+      r.right > window.innerWidth - 200 && r.bottom > window.innerHeight - 200;
+    document.documentElement.style.setProperty(
+      '--ytai-dock-bottom',
+      inCorner ? Math.round(window.innerHeight - r.top + 16) + 'px' : '80px'
+    );
+  };
+  // 미니플레이어는 열리고 닫힐 때 애니메이션이 있어서 끝난 뒤 한 번 더 잰다
+  const later = () => { update(); setTimeout(update, 400); };
+  const app = document.querySelector('ytd-app');
+  if (app) new MutationObserver(later).observe(app, { attributes: true });
+  window.addEventListener('resize', update);
+  document.addEventListener('yt-navigate-finish', later);
+  update();
+}
+
+// ─── 단축키 (보조 수단) ──────────────────────────────────────────────────────
+// manifest의 commands → background.js가 받아서 이 탭으로 전달한다.
+// 확장 단축키는 크롬이 먼저 가로채므로 전체화면에서도 동작한다.
+
+function listenForShortcuts() {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type !== 'YTAI_COMMAND') return;
+    if (msg.command === 'toggle-helper') togglePanel();
+    else if (msg.command === 'zoom-in') stepViewSize(1);
+    else if (msg.command === 'zoom-out') stepViewSize(-1);
+  });
+
+  // 버튼에 마우스를 올리면 단축키를 보여 준다. 사용자가 chrome://extensions/shortcuts에서
+  // 바꿨을 수 있으므로 실제 지정된 키를 background에 물어본다 (content script에서는 chrome.commands를 못 씀).
+  chrome.runtime.sendMessage({ type: 'GET_SHORTCUTS' }, (res) => {
+    if (chrome.runtime.lastError || !res) return;
+    const hint = (id, cmd) => {
+      const el = document.getElementById(id);
+      if (el && res[cmd]) el.title = `${el.title || el.getAttribute('aria-label') || ''} (${res[cmd]})`.trim();
+    };
+    hint('ytai-btn', 'toggle-helper');
+    hint('ytai-zoom-in', 'zoom-in');
+    hint('ytai-zoom-out', 'zoom-out');
+  });
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// ─── 화면낭독기용 알림 영역 ──────────────────────────────────────────────────
+// aria-live 영역은 매번 새로 만들면 읽히지 않는 경우가 많아서, 처음에 한 번 만들어
+// 두고 글자만 바꾼다.
+
+function createLiveRegion() {
+  const live = document.createElement('div');
+  live.id = 'ytai-live';
+  live.className = 'ytai-sr-only';
+  live.setAttribute('role', 'status');
+  live.setAttribute('aria-live', 'polite');
+  document.body.appendChild(live);
+}
+
+function announce(text) {
+  const live = document.getElementById('ytai-live');
+  if (!live || !text) return;
+  // 같은 문장이 연달아 와도 다시 읽히도록 비웠다가 채운다
+  live.textContent = '';
+  setTimeout(() => { live.textContent = text; }, 50);
+}
+
+// ─── 화면 아래 버튼 묶음 (가- / 가+ / 도움받기) ──────────────────────────────
+// 화면을 가리지 않도록 항상 떠 있는 버튼은 이 3개까지만 둔다.
+
+function createDock() {
+  const dock = document.createElement('div');
+  dock.id = 'ytai-dock';
+
+  const zoomOut = document.createElement('button');
+  zoomOut.type = 'button';
+  zoomOut.className = 'ytai-zoom-btn';
+  zoomOut.id = 'ytai-zoom-out';
+  zoomOut.innerHTML = '<span aria-hidden="true">가<small>−</small></span>';
+  zoomOut.setAttribute('aria-label', t('zoomOutLabel'));
+  zoomOut.title = t('zoomOutLabel');
+  zoomOut.addEventListener('click', () => stepViewSize(-1));
+
+  const zoomIn = document.createElement('button');
+  zoomIn.type = 'button';
+  zoomIn.className = 'ytai-zoom-btn';
+  zoomIn.id = 'ytai-zoom-in';
+  zoomIn.innerHTML = '<span aria-hidden="true">가<small>+</small></span>';
+  zoomIn.setAttribute('aria-label', t('zoomInLabel'));
+  zoomIn.title = t('zoomInLabel');
+  zoomIn.addEventListener('click', () => stepViewSize(1));
+
+  dock.append(zoomOut, zoomIn, createFloatingButton());
+  document.body.appendChild(dock);
+}
 
 function createFloatingButton() {
-  const btn = document.createElement('div');
+  const btn = document.createElement('button');
+  btn.type = 'button';
   btn.id = 'ytai-btn';
+  btn.setAttribute('aria-haspopup', 'dialog');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'ytai-panel');
+  btn.title = t('floatingBtnLabel');
   btn.innerHTML = `<span class="ytai-btn-icon"></span><span class="ytai-btn-label">${t('floatingBtnLabel')}</span>`;
   btn.addEventListener('click', togglePanel);
-  document.body.appendChild(btn);
+  return btn;
 }
 
 // ─── Helper panel (voice + chat) ─────────────────────────────────────────────
@@ -34,19 +145,20 @@ function createFloatingButton() {
 function createHelperPanel() {
   const panel = document.createElement('div');
   panel.id = 'ytai-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-labelledby', 'ytai-panel-title');
+  panel.tabIndex = -1;
   panel.innerHTML = `
     <div class="ytai-panel-header">
-      <span>${t('panelHeaderTitle')}</span>
-      <button class="ytai-close-btn" id="ytai-panel-close">✕</button>
+      <span id="ytai-panel-title">${t('panelHeaderTitle')}</span>
+      <button type="button" class="ytai-close-btn" id="ytai-panel-close" aria-label="${t('closeLabel')}"><span aria-hidden="true">✕</span></button>
     </div>
     <div class="ytai-panel-body" id="ytai-panel-body">
-      <div class="ytai-autoclick-row">
-        <span class="ytai-autoclick-label">${t('autoClickLabel')}</span>
-        <label class="ytai-switch">
-          <input type="checkbox" id="ytai-autoclick-chk">
-          <span class="ytai-slider"></span>
-        </label>
-      </div>
+      <button type="button" id="ytai-voice-btn" class="ytai-voice-btn">
+        ${MIC_ICON}
+        <span>${t('voiceBtnLabel')}</span>
+      </button>
+      <div id="ytai-voice-status" class="ytai-voice-status" aria-live="polite"></div>
 
       <div class="ytai-quick-grid">
         <button class="ytai-quick-btn" data-type="play" data-label="${t('quickPlay')}">
@@ -61,11 +173,11 @@ function createHelperPanel() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="7" y1="11" x2="11" y2="11"/><line x1="13" y1="11" x2="17" y2="11"/><line x1="7" y1="15" x2="10" y2="15"/></svg>
           <span>${t('quickSubtitles')}</span>
         </button>
-        <button class="ytai-quick-btn" data-type="fullscreen" data-label="${t('quickFullscreen')}">
+        <button class="ytai-quick-btn" data-slot="a" data-type="fullscreen" data-label="${t('quickFullscreen')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           <span>${t('quickFullscreen')}</span>
         </button>
-        <button class="ytai-quick-btn" data-type="next_video" data-label="${t('quickNext')}">
+        <button class="ytai-quick-btn" data-slot="b" data-type="next_video" data-label="${t('quickNext')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
           <span>${t('quickNext')}</span>
         </button>
@@ -86,31 +198,35 @@ function createHelperPanel() {
           <span>${t('quickHome')}</span>
         </button>
       </div>
-      <div class="ytai-or">${t('orSpeakOrType')}</div>
-      <button id="ytai-voice-btn" class="ytai-voice-btn">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-        <span>${t('voiceBtnLabel')}</span>
+
+      <!-- 글자 입력은 기본으로 접어 둔다. 어르신에게는 말하기와 빠른 버튼이 먼저 -->
+      <button type="button" class="ytai-type-toggle" id="ytai-type-toggle" aria-expanded="false" aria-controls="ytai-type-area">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6" y2="10"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="18" y1="10" x2="18" y2="10"/><line x1="7" y1="14" x2="17" y2="14"/></svg>
+        <span>${t('typeToggle')}</span>
       </button>
-      <div id="ytai-voice-status" class="ytai-voice-status"></div>
-      <div class="ytai-or">${t('orText')}</div>
-      <textarea id="ytai-input" placeholder="${t('inputPlaceholder')}" rows="3"></textarea>
-      <button id="ytai-send-btn" class="ytai-send-btn">${t('sendBtnLabel')}</button>
+      <div class="ytai-type-area" id="ytai-type-area" hidden>
+        <textarea id="ytai-input" placeholder="${t('inputPlaceholder')}" rows="3" aria-label="${t('typeToggle')}"></textarea>
+        <button type="button" id="ytai-send-btn" class="ytai-send-btn">${t('sendBtnLabel')}</button>
+      </div>
       <div id="ytai-loading" class="ytai-loading" style="display:none">
         <div class="ytai-spinner"></div>
         <span>${t('loadingText')}</span>
       </div>
+
+      <button type="button" class="ytai-open-settings" id="ytai-open-settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>${t('openSettingsBtn')}</span>
+      </button>
     </div>
+    ${settingsHtml()}
   `;
   document.body.appendChild(panel);
 
-  // 자동 클릭 토글 초기화
-  chrome.storage.local.get('autoClick', (data) => {
-    _autoClick = !!data.autoClick;
-    document.getElementById('ytai-autoclick-chk').checked = _autoClick;
-  });
-  document.getElementById('ytai-autoclick-chk').addEventListener('change', (e) => {
-    _autoClick = e.target.checked;
-    chrome.storage.local.set({ autoClick: _autoClick });
+  document.getElementById('ytai-type-toggle').addEventListener('click', (e) => {
+    const area = document.getElementById('ytai-type-area');
+    area.hidden = !area.hidden;
+    e.currentTarget.setAttribute('aria-expanded', String(!area.hidden));
+    if (!area.hidden) document.getElementById('ytai-input').focus();
   });
 
   // 퀵액션 버튼
@@ -121,6 +237,14 @@ function createHelperPanel() {
   });
 
   document.getElementById('ytai-panel-close').addEventListener('click', hidePanel);
+  bindSettings();
+  // Esc는 포커스가 패널 안에 있을 때만 받는다 (유튜브 메뉴 닫기 등과 겹치지 않게)
+  panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      hidePanel();
+    }
+  });
   document.getElementById('ytai-voice-btn').addEventListener('click', startVoice);
   document.getElementById('ytai-send-btn').addEventListener('click', () => {
     const val = document.getElementById('ytai-input').value.trim();
@@ -137,11 +261,27 @@ function createHelperPanel() {
 
 function togglePanel() {
   const panel = document.getElementById('ytai-panel');
-  panel.classList.toggle('ytai-panel-visible');
+  if (panel.classList.contains('ytai-panel-visible')) {
+    hidePanel();
+    return;
+  }
+  updateQuickGridForPage();
+  panel.classList.add('ytai-panel-visible');
+  document.getElementById('ytai-btn')?.setAttribute('aria-expanded', 'true');
+  // 키보드·화면낭독기 사용자가 바로 패널 안에서 시작하도록 포커스를 옮긴다
+  panel.focus();
 }
 
 function hidePanel() {
-  document.getElementById('ytai-panel')?.classList.remove('ytai-panel-visible');
+  const panel = document.getElementById('ytai-panel');
+  if (!panel) return;
+  const hadFocus = panel.contains(document.activeElement);
+  panel.classList.remove('ytai-panel-visible');
+  closeSettings();
+  const btn = document.getElementById('ytai-btn');
+  btn?.setAttribute('aria-expanded', 'false');
+  // 패널 안에 있던 포커스는 도움받기 버튼으로 돌려준다 (버튼이 숨겨져 있으면 무시됨)
+  if (hadFocus) btn?.focus();
 }
 
 function resetPanel() {
@@ -151,6 +291,225 @@ function resetPanel() {
   document.getElementById('ytai-voice-status').textContent = '';
 }
 
+// ─── 보기 설정 ───────────────────────────────────────────────────────────────
+// 글씨 크기·강조색·소리로 읽기·자동 클릭 대기 시간. chrome.storage에 저장해서
+// 다른 유튜브 탭과 다음 방문에도 그대로 유지한다. 화면에 적용하는 건
+// <html>의 data-ytai-* 속성 → content.css의 변수.
+
+const VIEW_SIZES = ['normal', 'large', 'xlarge'];
+// autoClick: 0이면 끔, 2·5·10이면 그 초만큼 기다렸다가 자동 클릭
+const VIEW_DEFAULTS = { size: 'normal', color: 'default', tts: false, autoClick: 0 };
+let _view = { ...VIEW_DEFAULTS };
+
+function sanitizeView(v) {
+  const out = { ...VIEW_DEFAULTS, ...(v || {}) };
+  if (!VIEW_SIZES.includes(out.size)) out.size = VIEW_DEFAULTS.size;
+  if (!['default', 'contrast'].includes(out.color)) out.color = VIEW_DEFAULTS.color;
+  if (![0, 2, 5, 10].includes(out.autoClick)) out.autoClick = VIEW_DEFAULTS.autoClick;
+  delete out.autoClickDelay;
+  out.tts = !!out.tts;
+  return out;
+}
+
+function loadViewSettings() {
+  // 크롬은 음성 목록을 처음 요청할 때 불러오므로 미리 한 번 불러 둔다 (첫 안내부터 설치된 음성을 쓰도록)
+  if ('speechSynthesis' in window) speechSynthesis.getVoices?.();
+  chrome.storage.local.get(['view', 'autoClick'], (data) => {
+    const v = { ...(data.view || {}) };
+    // 예전 버전 저장값 옮기기: 자동 클릭 켜기/끄기(autoClick: true/false) + 대기 시간(autoClickDelay)
+    if (v.autoClick === undefined && (data.autoClick !== undefined || v.autoClickDelay !== undefined)) {
+      v.autoClick = data.autoClick ? ([2, 5, 10].includes(v.autoClickDelay) ? v.autoClickDelay : 2) : 0;
+      chrome.storage.local.remove('autoClick');
+      chrome.storage.local.set({ view: sanitizeView(v) });
+    }
+    _view = sanitizeView(v);
+    applyViewSettings();
+  });
+  // 다른 탭에서 바꾼 설정도 바로 반영
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.view) return;
+    _view = sanitizeView(changes.view.newValue);
+    applyViewSettings();
+  });
+}
+
+function applyViewSettings() {
+  const root = document.documentElement;
+  root.dataset.ytaiSize = _view.size;
+  root.dataset.ytaiColor = _view.color;
+
+  document.querySelectorAll('#ytai-settings-body [data-view-key]').forEach(btn => {
+    const on = String(_view[btn.dataset.viewKey]) === btn.dataset.viewValue;
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const tts = document.getElementById('ytai-tts-chk');
+  if (tts) tts.checked = _view.tts;
+  if (!_view.tts) stopSpeaking();
+}
+
+function setView(key, value) {
+  _view = sanitizeView({ ..._view, [key]: value });
+  applyViewSettings();
+  chrome.storage.local.set({ view: _view });
+}
+
+function sizeLabel(size) {
+  return t({ normal: 'sizeNormal', large: 'sizeLarge', xlarge: 'sizeXLarge' }[size]);
+}
+
+// 가+ / 가- : 도우미 글씨·버튼과 (켜져 있으면) 유튜브 자막을 한 번에 한 단계씩
+function stepViewSize(dir) {
+  const i = VIEW_SIZES.indexOf(_view.size);
+  const next = Math.min(VIEW_SIZES.length - 1, Math.max(0, i + dir));
+  const captions = changeCaptionSize(dir);
+  if (next !== i) {
+    setView('size', VIEW_SIZES[next]);
+    showToast(t('sizeChangedToast').replace('{size}', sizeLabel(VIEW_SIZES[next])) + (captions ? ' ' + t('captionAlsoChanged') : ''));
+  } else {
+    showToast(t(dir > 0 ? 'sizeMaxToast' : 'sizeMinToast') + (captions ? ' ' + t('captionAlsoChanged') : ''));
+  }
+}
+
+// 자막 크기는 CSS로 덮어쓰지 않고 유튜브 자체 기능(키보드 +/-)을 부른다.
+// 유튜브는 자막 위치·크기를 직접 계산해서 요소에 넣기 때문에 CSS로 덮으면
+// 화면 밖으로 밀리거나 업데이트 때 깨지기 쉽다. 유튜브 설정으로 바꾸면 다음 영상에도 유지된다.
+// 자막이 켜져 있을 때만 보낸다 (꺼져 있으면 아무 변화가 없어 사용자가 헷갈림).
+function changeCaptionSize(dir) {
+  const player = document.querySelector('#movie_player, .html5-video-player');
+  if (!player) return false;
+  const ccOn = [...document.querySelectorAll('.ytp-subtitles-button[aria-pressed="true"]')].some(isInViewport);
+  if (!ccOn) return false;
+  const plus = dir > 0;
+  player.dispatchEvent(new KeyboardEvent('keydown', {
+    key: plus ? '+' : '-',
+    code: plus ? 'NumpadAdd' : 'NumpadSubtract',
+    keyCode: plus ? 107 : 109,
+    which: plus ? 107 : 109,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+  }));
+  return true;
+}
+
+function settingsHtml() {
+  const zoomKey = /Mac/i.test(navigator.platform) ? '⌘ +' : 'Ctrl + +';
+  const choice = (key, value, inner) =>
+    `<button type="button" class="ytai-choice" data-view-key="${key}" data-view-value="${value}" aria-pressed="false">${inner}</button>`;
+  return `
+    <div class="ytai-settings-body" id="ytai-settings-body">
+      <div class="ytai-setting" role="group" aria-labelledby="ytai-set-size">
+        <div class="ytai-setting-label" id="ytai-set-size">${t('settingSize')}</div>
+        <div class="ytai-choice-row">
+          ${choice('size', 'normal', `<span class="ytai-choice-sample" style="font-size:14px" aria-hidden="true">가</span>${t('sizeNormal')}`)}
+          ${choice('size', 'large', `<span class="ytai-choice-sample" style="font-size:18px" aria-hidden="true">가</span>${t('sizeLarge')}`)}
+          ${choice('size', 'xlarge', `<span class="ytai-choice-sample" style="font-size:22px" aria-hidden="true">가</span>${t('sizeXLarge')}`)}
+        </div>
+        <p class="ytai-setting-hint">${t('pageZoomHint').replace('{key}', zoomKey)}</p>
+      </div>
+
+      <div class="ytai-setting" role="group" aria-labelledby="ytai-set-color">
+        <div class="ytai-setting-label" id="ytai-set-color">${t('settingColor')}</div>
+        <div class="ytai-choice-row">
+          ${choice('color', 'default', `<span class="ytai-swatch ytai-swatch-default" aria-hidden="true"></span>${t('colorDefault')}`)}
+          ${choice('color', 'contrast', `<span class="ytai-swatch ytai-swatch-contrast" aria-hidden="true"></span>${t('colorContrast')}`)}
+        </div>
+      </div>
+
+      <div class="ytai-setting">
+        <div class="ytai-setting-switch-row">
+          <span class="ytai-setting-label" id="ytai-set-tts">${t('settingTts')}</span>
+          <label class="ytai-switch">
+            <input type="checkbox" id="ytai-tts-chk" aria-labelledby="ytai-set-tts">
+            <span class="ytai-slider"></span>
+          </label>
+        </div>
+        <p class="ytai-setting-hint">${t('settingTtsHint')}</p>
+      </div>
+
+      <div class="ytai-setting" role="group" aria-labelledby="ytai-set-autoclick">
+        <div class="ytai-setting-label" id="ytai-set-autoclick">${t('autoClickLabel')}</div>
+        <div class="ytai-choice-row">
+          ${choice('autoClick', '0', t('autoClickOff'))}
+          ${choice('autoClick', '2', t('delaySeconds').replace('{n}', 2))}
+          ${choice('autoClick', '5', t('delaySeconds').replace('{n}', 5))}
+          ${choice('autoClick', '10', t('delaySeconds').replace('{n}', 10))}
+        </div>
+        <p class="ytai-setting-hint">${t('autoClickHint')}</p>
+      </div>
+
+      <button type="button" class="ytai-back-btn" id="ytai-settings-back">${t('settingsBack')}</button>
+    </div>
+  `;
+}
+
+function bindSettings() {
+  document.getElementById('ytai-open-settings').addEventListener('click', openSettings);
+  document.getElementById('ytai-settings-back').addEventListener('click', () => {
+    closeSettings();
+    document.getElementById('ytai-open-settings').focus();
+  });
+
+  document.querySelectorAll('#ytai-settings-body [data-view-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.viewKey;
+      const value = key === 'autoClick' ? Number(btn.dataset.viewValue) : btn.dataset.viewValue;
+      setView(key, value);
+    });
+  });
+
+  document.getElementById('ytai-tts-chk').addEventListener('change', (e) => {
+    if (e.target.checked && !('speechSynthesis' in window)) {
+      e.target.checked = false;
+      showToast(t('ttsUnsupported'));
+      return;
+    }
+    setView('tts', e.target.checked);
+    if (e.target.checked) speak(t('ttsOnSample'));
+  });
+
+}
+
+function openSettings() {
+  const panel = document.getElementById('ytai-panel');
+  panel.classList.add('ytai-settings-open');
+  document.getElementById('ytai-panel-title').textContent = t('settingsTitle');
+  panel.scrollTop = 0;
+  document.querySelector('#ytai-settings-body [aria-pressed="true"]')?.focus();
+}
+
+function closeSettings() {
+  const panel = document.getElementById('ytai-panel');
+  if (!panel?.classList.contains('ytai-settings-open')) return;
+  panel.classList.remove('ytai-settings-open');
+  document.getElementById('ytai-panel-title').textContent = t('panelHeaderTitle');
+}
+
+// ─── 소리로 읽기 (브라우저 내장 음성 합성) ───────────────────────────────────
+// 다 읽으면 resolve된다. 크롬은 가끔 onend를 안 부르는 버그가 있어서 길이 기반 시간 제한을 둔다.
+
+function speak(text) {
+  return new Promise((resolve) => {
+    if (!_view.tts || !text || !('speechSynthesis' in window)) return resolve();
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = YTAI_LANG === 'ko' ? 'ko-KR' : 'en-US';
+    // 크롬의 "Google 한국어" 같은 온라인 음성은 문장을 구글 서버로 보낸다.
+    // 컴퓨터에 설치된 음성(Windows: Microsoft Heami, Mac: Yuna 등)이 있으면 그것을 쓴다.
+    const voice = speechSynthesis.getVoices?.().find(v => v.localService && v.lang.replace('_', '-').startsWith(u.lang.slice(0, 2)));
+    if (voice) u.voice = voice;
+    u.rate = 0.9;
+    const timer = setTimeout(resolve, 3000 + text.length * 250);
+    u.onend = u.onerror = () => { clearTimeout(timer); resolve(); };
+    // cancel() 직후 바로 speak()하면 크롬에서 무시되는 경우가 있어 한 틱 늦춘다
+    setTimeout(() => speechSynthesis.speak(u), 50);
+  });
+}
+
+function stopSpeaking() {
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
 // ─── Voice recognition ────────────────────────────────────────────────────────
 
 let recognition = null;
@@ -158,7 +517,7 @@ let recognition = null;
 function startVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
-    showErrorToast(t('voiceUnsupported'));
+    showToast(t('voiceUnsupported'));
     return;
   }
 
@@ -190,7 +549,7 @@ function startVoice() {
 
   recognition.onend = () => {
     btn.classList.remove('ytai-recording');
-    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><span>${t('voiceBtnLabel')}</span>`;
+    btn.innerHTML = `${MIC_ICON}<span>${t('voiceBtnLabel')}</span>`;
     recognition = null;
     const val = document.getElementById('ytai-input').value.trim();
     if (val) setTimeout(() => submitRequest(val), 400);
@@ -198,7 +557,7 @@ function startVoice() {
 
   recognition.onerror = () => {
     btn.classList.remove('ytai-recording');
-    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg><span>${t('voiceBtnLabel')}</span>`;
+    btn.innerHTML = `${MIC_ICON}<span>${t('voiceBtnLabel')}</span>`;
     status.textContent = t('voiceError');
     recognition = null;
   };
@@ -206,9 +565,87 @@ function startVoice() {
   recognition.start();
 }
 
+// ─── 말로 설정 바꾸기 (AI 서버로 보내지 않고 직접 처리) ─────────────────────
+// "글씨 크게 해 줘", "소리로 읽어 줘" 같은 짧은 명령은 여기서 바로 처리한다. 빠르고 비용이 없다.
+// "자막 크게 하는 법 알려줘" 같은 진짜 질문까지 가로채지 않도록, 끝말(해 줘·주세요 등)을
+// 떼어 낸 뒤 문장 전체가 명령 모양과 정확히 맞을 때만 처리한다.
+
+const LOCAL_COMMANDS = {
+  ko: [
+    [/^(글씨|글자)?(를|을)?더?(크게|키워|확대)$/,               () => stepViewSize(1)],
+    [/^(글씨|글자)?(를|을)?더?(작게|줄여|축소)$/,               () => stepViewSize(-1)],
+    [/^(안내)?(를|을)?(소리로|소리내서|음성으로)?읽어$|^(소리로읽기|읽어주기)(를|을)?켜$/, () => setTtsFromCommand(true)],
+    [/^(소리로읽기|읽어주기|소리|음성|읽기)(를|을)?(꺼|그만)$|^그만읽어$|^읽지마$/, () => setTtsFromCommand(false)],
+    [/^(고대비|노란색|노랑|노랑검정)(으로|로|색으로)?(바꿔|켜)?$/, () => setColorFromCommand('contrast')],
+    [/^(기본색|원래색|기본|원래)(으로|색으로)?(바꿔|돌려)?$/,             () => setColorFromCommand('default')],
+    [/^자막(을|를)?더?(크게|키워)$/,                             () => captionFromCommand(1)],
+    [/^자막(을|를)?더?(작게|줄여)$/,                             () => captionFromCommand(-1)],
+    [/^보기설정(열어)?$/,                                         () => { openSettings(); return true; }],
+  ],
+  en: [
+    [/^(make )?(the )?(text )?(bigger|larger)$|^zoom in$|^(increase|enlarge) (the )?text( size)?$/, () => stepViewSize(1)],
+    [/^(make )?(the )?(text )?smaller$|^zoom out$|^(decrease|reduce) (the )?text( size)?$/,          () => stepViewSize(-1)],
+    [/^(turn on )?read( it)?( out)? aloud$|^read (it )?to me$|^read aloud on$/,                   () => setTtsFromCommand(true)],
+    [/^(turn off read aloud|stop reading|read aloud off|don't read)$/,                              () => setTtsFromCommand(false)],
+    [/^(turn on )?high contrast( mode)?$|^yellow( and black)?$/,                                    () => setColorFromCommand('contrast')],
+    [/^(default|normal) colou?rs?$/,                                                               () => setColorFromCommand('default')],
+    [/^(make )?(the )?(captions|subtitles) (bigger|larger)$|^(bigger|larger) (captions|subtitles)$/, () => captionFromCommand(1)],
+    [/^(make )?(the )?(captions|subtitles) smaller$|^smaller (captions|subtitles)$/,                 () => captionFromCommand(-1)],
+    [/^(open )?display settings$/,                                                                 () => { openSettings(); return true; }],
+  ],
+};
+
+function normalizeCommand(text) {
+  if (YTAI_LANG === 'en') {
+    return text.toLowerCase().replace(/[.,!?~]/g, ' ').replace(/\b(please|can you|could you|for me)\b/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+  }
+  let n = text.replace(/[\s.,!?~]/g, '').replace(/좀/g, '');
+  // 끝말 떼기: "크게해줘요" → "크게", "읽어주세요" → "읽어"
+  let prev;
+  do {
+    prev = n;
+    n = n.replace(/(해주세요|해주실래요|해줄래|해주라|해줘요|해줘|해요|주세요|줄래|줘요|줘|해|요)$/, '');
+  } while (n !== prev && n.length > 0);
+  return n;
+}
+
+function handleLocalCommand(text) {
+  const n = normalizeCommand(text);
+  if (!n || n.length > 20) return false;
+  for (const [re, run] of LOCAL_COMMANDS[YTAI_LANG]) {
+    if (re.test(n)) {
+      run();
+      return true;
+    }
+  }
+  return false;
+}
+
+function setTtsFromCommand(on) {
+  if (on && !('speechSynthesis' in window)) { showToast(t('ttsUnsupported')); return; }
+  setView('tts', on);
+  showToast(t(on ? 'ttsOnSample' : 'ttsOffToast'));
+}
+
+function setColorFromCommand(color) {
+  setView('color', color);
+  showToast(t(color === 'contrast' ? 'colorContrastToast' : 'colorDefaultToast'));
+}
+
+function captionFromCommand(dir) {
+  showToast(changeCaptionSize(dir) ? t(dir > 0 ? 'captionBiggerToast' : 'captionSmallerToast') : t('captionOffToast'));
+}
+
 // ─── Submit request ───────────────────────────────────────────────────────────
 
 function submitRequest(userRequest) {
+  if (handleLocalCommand(userRequest)) {
+    // 입력창만 비우고 패널은 그대로 둔다 (바뀐 크기·색을 바로 볼 수 있게)
+    document.getElementById('ytai-input').value = '';
+    document.getElementById('ytai-voice-status').textContent = '';
+    return;
+  }
   document.getElementById('ytai-panel-body').classList.add('ytai-loading-mode');
   document.getElementById('ytai-loading').style.display = 'flex';
 
@@ -222,7 +659,7 @@ function submitRequest(userRequest) {
     if (!responded) {
       port.disconnect();
       resetPanel();
-      showErrorToast(t('timeoutError'));
+      showToast(t('timeoutError'));
     }
   }, 35000);
 
@@ -235,7 +672,7 @@ function submitRequest(userRequest) {
       showOverlay(response.result);
     } else if (response.type === 'ANALYSIS_ERROR') {
       resetPanel();
-      showErrorToast(response.error);
+      showToast(response.error);
     }
   });
 
@@ -243,7 +680,7 @@ function submitRequest(userRequest) {
     clearTimeout(timeout);
     if (!responded) {
       resetPanel();
-      showErrorToast(t('connError'));
+      showToast(t('connError'));
     }
   });
 
@@ -352,6 +789,9 @@ const ELEMENT_SELECTORS = {
   library:       'ytd-guide-entry-renderer a[href="/feed/library"], ytd-mini-guide-entry-renderer a[href="/feed/library"]',
   history:       'ytd-guide-entry-renderer a[href="/feed/history"], ytd-mini-guide-entry-renderer a[href="/feed/history"]',
   shorts:        'ytd-guide-entry-renderer a[href="/shorts"], ytd-mini-guide-entry-renderer a[href="/shorts"]',
+  // 데스크톱 쇼츠 화면 오른쪽의 위/아래 이동 버튼
+  next_short:    '#navigation-button-down button, #navigation-button-down [role="button"]',
+  prev_short:    '#navigation-button-up button, #navigation-button-up [role="button"]',
 };
 
 const TEXT_FALLBACKS = {
@@ -435,22 +875,55 @@ function findElementByTextContent(text) {
       return keywords.some(k => k.length >= 2 && all.includes(k) && all.length < k.length * 5);
     },
   ]) {
-    for (const el of candidates) {
-      if (!pass(el)) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) return el;
-    }
+    const el = pickOnScreen([...candidates].filter(pass));
+    if (el) return el;
   }
   return null;
 }
 
+// ─── 화면 안의 요소 고르기 ───────────────────────────────────────────────────
+// 쇼츠는 앞뒤 영상을 미리 불러와서 좋아요·구독 같은 버튼이 여러 벌 있고,
+// 일반 영상 화면도 스크롤하면 버튼이 화면 밖으로 나간다. 크기만 보고 첫 번째를
+// 고르면 화면 밖 버튼을 가리키게 되므로, 스냅샷(getPageSnapshot)과 같은 기준으로
+// 지금 화면에 보이는 것을 우선한다.
+
+function isInViewport(el) {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return false;
+  return r.right > 0 && r.bottom > 0 && r.left < window.innerWidth && r.top < window.innerHeight;
+}
+
+function isShortsPage() {
+  return location.pathname.startsWith('/shorts');
+}
+
+function pickOnScreen(elements) {
+  const sized = elements.filter(el => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  });
+  if (!sized.length) return null;
+
+  let onScreen = sized.filter(isInViewport);
+  // 쇼츠를 넘기는 도중에는 다음 쇼츠가 화면에 반쯤 걸쳐 있을 수 있다.
+  // 지금 재생 중인 쇼츠 안에 후보가 있으면 그것만 쓴다.
+  const activeReel = document.querySelector('ytd-reel-video-renderer[is-active]');
+  if (activeReel) {
+    const inReel = onScreen.filter(el => activeReel.contains(el));
+    if (inReel.length) onScreen = inReel;
+  }
+  if (onScreen.length) return onScreen[0];
+
+  // 화면 안에 없으면 일반 화면에서는 화면 밖 요소라도 돌려준다(호출하는 쪽에서
+  // 스크롤해서 보여 줌). 쇼츠에서는 화면 밖 요소가 다른 쇼츠의 버튼이므로 쓰지 않는다.
+  return isShortsPage() ? null : sized[0];
+}
+
 function findTargetElement(elementType, elementText) {
-  // 1. CSS 선택자 - querySelectorAll로 모든 후보 중 첫 번째 visible 반환
+  // 1. CSS 선택자 - 후보 중 화면에 보이는 것 우선
   if (elementType && ELEMENT_SELECTORS[elementType]) {
-    for (const el of document.querySelectorAll(ELEMENT_SELECTORS[elementType])) {
-      const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) return el;
-    }
+    const el = pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS[elementType])]);
+    if (el) return el;
   }
   // 2. element_text (AI가 스냅샷에서 골라준 정확한 텍스트)
   if (elementText) {
@@ -481,8 +954,9 @@ let _trackingElementText = null;
 let _rafId = null;
 let _targetEl = null;
 let _targetClickFn = null;
-let _autoClick = false;
 let _autoClickTimer = null;
+// 단계가 바뀌거나 안내가 끝나면 증가. 늦게 끝난 음성 읽기가 지난 단계의 자동 클릭을 시작하지 않게 한다.
+let _guideToken = 0;
 
 function startTracking(elementType, elementText) {
   _trackingElementType = elementType;
@@ -519,14 +993,23 @@ function startTracking(elementType, elementText) {
       if (p) { p.style.left = x + 'px'; p.style.top = y + 'px'; }
       if (a) { a.style.left = x + 'px'; a.style.top = y + 'px'; }
       if (l) {
-        const labelY = y > window.innerHeight * 0.75 ? y - 80 : y + 60;
         l.style.left = x + 'px';
-        l.style.top = labelY + 'px';
+        l.style.top = labelTop(y, l) + 'px';
       }
     }
     _rafId = requestAnimationFrame(tick);
   }
   _rafId = requestAnimationFrame(tick);
+}
+
+// 이름표 위치: 화면 아래쪽 버튼이면 화살표 위에, 아니면 불빛 아래에 둔다.
+// 화살표는 대상 중심에서 64px 위(.ytai-arrow), 높이는 22px × 글씨 배율이라
+// 이름표가 화살표를 덮지 않도록 이름표 실제 높이까지 계산한다.
+function labelTop(y, labelEl) {
+  if (y <= window.innerHeight * 0.75) return y + 60;
+  const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ytai-scale')) || 1;
+  const arrowTop = y - 64 - 11 * scale;
+  return arrowTop - 6 - (labelEl?.offsetHeight || 30 * scale);
 }
 
 function stopTracking() {
@@ -547,14 +1030,10 @@ function attachClickAdvance(elementType, elementText) {
 }
 
 function findByTextElement(texts) {
+  const all = [...document.querySelectorAll('a, button, span, yt-formatted-string, ytd-guide-entry-renderer')];
   for (const text of texts) {
-    const all = document.querySelectorAll('a, button, span, yt-formatted-string, ytd-guide-entry-renderer');
-    for (const el of all) {
-      if (el.textContent.trim() === text) {
-        const rect = el.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) return el;
-      }
-    }
+    const el = pickOnScreen(all.filter(e => e.textContent.trim() === text));
+    if (el) return el;
   }
   return null;
 }
@@ -570,6 +1049,8 @@ function detachClickAdvance() {
 function advanceStep() {
   const isLast = _stepIndex === _steps.length - 1;
   if (isLast) {
+    _guideToken++;
+    stopSpeaking();
     stopTracking();
     detachClickAdvance();
     removeOverlay();
@@ -582,12 +1063,34 @@ function advanceStep() {
 }
 
 
+// ─── 자동 클릭 안전 장치 ─────────────────────────────────────────────────────
+// 자동 클릭은 되돌리기 쉬운 버튼 종류만 허용한다. "위험한 것 막기"(단어 블랙리스트)는
+// 빠지는 게 생기고 "음소거 해제" 같은 멀쩡한 버튼까지 걸리므로 허용 목록 방식을 쓴다.
+// 구독(누르면 구독 취소가 될 수 있음)·싫어요, 그리고 종류 없이 이름만 있는 단계는
+// 사용자가 직접 눌러야 한다.
+const AUTO_CLICK_SAFE_TYPES = new Set([
+  'play', 'volume', 'subtitles', 'settings', 'fullscreen', 'theater', 'next_video',
+  'miniplayer', 'search', 'like', 'save', 'share', 'more_actions', 'home',
+  'subscriptions', 'library', 'history', 'shorts', 'playlists_tab',
+  'next_short', 'prev_short',
+]);
+// 허용된 종류여도 선택자/이름 매칭이 엉뚱한 버튼을 잡았을 때를 대비한 2차 방어선
+const RISKY_LABEL = /구독\s*취소|삭제|제거|신고|차단|로그아웃|unsubscribe|delete|remove|report|block|sign out/i;
+
+function canAutoClick(elementType, elementText) {
+  if (!AUTO_CLICK_SAFE_TYPES.has(elementType)) return false;
+  const el = findTargetElement(elementType, elementText);
+  if (!el) return false;
+  const label = el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || '';
+  return !RISKY_LABEL.test(label);
+}
+
 function cancelAutoClick() {
   if (_autoClickTimer) { clearInterval(_autoClickTimer); _autoClickTimer = null; }
 }
 
 function startAutoClickCountdown(elementType, elementText) {
-  let secs = 2;
+  let secs = _view.autoClick;
   const updateBtn = () => {
     const btn = document.getElementById('ytai-instr-ok');
     if (btn) btn.textContent = t('autoClickCountdown').replace('{n}', secs);
@@ -600,15 +1103,74 @@ function startAutoClickCountdown(elementType, elementText) {
     } else {
       clearInterval(_autoClickTimer);
       _autoClickTimer = null;
-      const el = findTargetElement(elementType, elementText);
-      if (el) el.click();
+      // 카운트다운 사이에 화면이 바뀌었을 수 있으니 누르기 직전에 한 번 더 확인
+      if (!canAutoClick(elementType, elementText)) {
+        const btn = document.getElementById('ytai-instr-ok');
+        if (btn) btn.textContent = t('skipBtn');
+        attachClickAdvance(elementType, elementText);
+        return;
+      }
+      findTargetElement(elementType, elementText).click();
       setTimeout(() => advanceStep(), 300);
     }
   }, 1000);
 }
 
+// ─── 쇼츠 전용 빠른 버튼 ─────────────────────────────────────────────────────
+// 쇼츠에는 "다음 영상" 버튼이 없고, 데스크톱 쇼츠에는 전체화면 버튼도 없다.
+// 쇼츠 화면에서는 이 두 칸을 "이전 쇼츠 / 다음 쇼츠"로 바꾸고, 가리키는 대신 도우미가 직접 넘긴다.
+
+const QUICK_SLOTS = {
+  normal: {
+    a: { type: 'fullscreen', label: 'quickFullscreen', icon: '<polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>' },
+    b: { type: 'next_video', label: 'quickNext', icon: '<polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/>' },
+  },
+  shorts: {
+    a: { type: 'prev_short', label: 'quickPrevShort', icon: '<polyline points="18,15 12,9 6,15"/>' },
+    b: { type: 'next_short', label: 'quickNextShort', icon: '<polyline points="6,9 12,15 18,9"/>' },
+  },
+};
+
+function updateQuickGridForPage() {
+  const mode = isShortsPage() ? 'shorts' : 'normal';
+  const grid = document.querySelector('#ytai-panel .ytai-quick-grid');
+  if (!grid || grid.dataset.mode === mode) return;
+  grid.dataset.mode = mode;
+  for (const [slot, def] of Object.entries(QUICK_SLOTS[mode])) {
+    const btn = grid.querySelector(`[data-slot="${slot}"]`);
+    if (!btn) continue;
+    btn.dataset.type = def.type;
+    btn.dataset.label = t(def.label);
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${def.icon}</svg><span>${t(def.label)}</span>`;
+  }
+}
+
+// 다음/이전 쇼츠로 넘기기. 1) 유튜브의 위/아래 이동 버튼 2) 없으면 옆 쇼츠로 스크롤
+function goShorts(dir) {
+  const btn = pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS[dir > 0 ? 'next_short' : 'prev_short'])]);
+  if (btn) {
+    btn.click();
+  } else {
+    const active = document.querySelector('ytd-reel-video-renderer[is-active]');
+    let sib = active && (dir > 0 ? active.nextElementSibling : active.previousElementSibling);
+    while (sib && sib.tagName !== 'YTD-REEL-VIDEO-RENDERER') sib = dir > 0 ? sib.nextElementSibling : sib.previousElementSibling;
+    if (!sib) {
+      showToast(t(dir > 0 ? 'noNextShortToast' : 'noPrevShortToast'));
+      return false;
+    }
+    sib.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }
+  showToast(t(dir > 0 ? 'nextShortToast' : 'prevShortToast'));
+  return true;
+}
+
 function quickAction(elementType, label) {
   hidePanel();
+
+  if (elementType === 'next_short' || elementType === 'prev_short') {
+    goShorts(elementType === 'next_short' ? 1 : -1);
+    return;
+  }
 
   // 홈·구독·보관함·검색은 버튼이 안 보일 때 직접 이동
   const NAV_URLS = {
@@ -629,7 +1191,7 @@ function quickAction(elementType, label) {
       const input = document.querySelector('input#search');
       if (input) { input.focus(); input.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
     }
-    showErrorToast(t('notFoundToast').replace('{label}', label));
+    showToast(t('notFoundToast').replace('{label}', label));
     return;
   }
   showOverlay({
@@ -644,13 +1206,13 @@ function quickAction(elementType, label) {
 
 function showOverlay(result) {
   if (!result?.steps?.length) {
-    showErrorToast(t('responseFormatError'));
+    showToast(t('responseFormatError'));
     resetPanel();
     return;
   }
   _steps = result.steps;
   _stepIndex = 0;
-  _floatingBtn = document.getElementById('ytai-btn');
+  _floatingBtn = document.getElementById('ytai-dock');
   if (_floatingBtn) _floatingBtn.style.display = 'none';
   showStep(_stepIndex);
 }
@@ -668,11 +1230,20 @@ function showStep(index) {
   const total = _steps.length;
   const eType = step.element_type ?? null;
   const eText = step.element_text ?? null;
+  const hasTarget = !!(eType || eText);
+  let targetY = null;
+  const autoClickHere = _view.autoClick > 0 && hasTarget && canAutoClick(eType, eText);
 
-  if (eType || eText) {
+  if (hasTarget) {
+    // 일반 영상 화면에서 스크롤로 버튼이 화면 밖에 있으면 보이는 곳으로 가져온다
+    const targetEl = findTargetElement(eType, eText);
+    if (targetEl && !isInViewport(targetEl)) {
+      targetEl.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    }
     const pos = getElementCenter(eType, eText);
     const initX = pos?.x ?? -999;
     const initY = pos?.y ?? -999;
+    targetY = pos?.y ?? null;
     const overlay = document.createElement('div');
     overlay.id = 'ytai-overlay';
     overlay.innerHTML = `
@@ -680,45 +1251,63 @@ function showStep(index) {
       <div class="ytai-pulse" style="left:${initX}px;top:${initY}px"></div>
       <div class="ytai-arrow" style="left:${initX}px;top:${initY}px"></div>
     `;
+    let label = null;
     if (step.target_label) {
-      const labelY = initY > window.innerHeight * 0.75 ? initY - 80 : initY + 60;
-      const label = document.createElement('div');
+      label = document.createElement('div');
       label.className = 'ytai-target-label';
-      label.style.cssText = `left:${initX}px;top:${labelY}px`;
+      label.style.left = initX + 'px';
       label.textContent = step.target_label;
       overlay.appendChild(label);
     }
     document.body.appendChild(overlay);
+    // 높이를 알아야 위치를 정할 수 있어서 화면에 붙인 뒤에 계산
+    if (label) label.style.top = labelTop(initY, label) + 'px';
     startTracking(eType, eText);
-    if (_autoClick) {
-      // 자동 클릭 모드: 카운트다운 후 자동 클릭
-    } else if (!isLast) {
+    // 자동 클릭 모드면 카운트다운 후 자동 클릭, 아니면 사용자가 누를 때 다음 단계로
+    if (!autoClickHere && !isLast) {
       attachClickAdvance(eType, eText);
     }
   }
 
   const box = document.createElement('div');
   box.id = 'ytai-instruction';
+  // 가리킨 버튼이 화면 아래쪽(유튜브 재생바 등)이면 안내문이 덮지 않도록 위로 올린다.
+  // 글씨를 크게 하면 안내문 상자도 커져서 더 자주 겹친다.
+  if (targetY !== null && targetY > window.innerHeight * 0.55) box.classList.add('ytai-instr-top');
   const stepIndicator = total > 1
     ? `<div class="ytai-step-indicator">${index + 1} / ${total}</div>`
     : '';
 
-  const btnLabel = isLast ? t('confirmBtn') : (_autoClick && (eType || eText) ? t('autoClickCountdown').replace('{n}', 2) : ((eType || eText) ? t('skipBtn') : t('nextBtn')));
+  const btnLabel = isLast ? t('confirmBtn') : (autoClickHere ? t('autoClickCountdown').replace('{n}', _view.autoClick) : (hasTarget ? t('skipBtn') : t('nextBtn')));
+  // 자동 클릭을 켰지만 이 버튼은 안전 목록 밖이라 직접 눌러야 하는 경우
+  const manualNote = _view.autoClick > 0 && hasTarget && !autoClickHere
+    ? `<div class="ytai-instr-note">${t('autoClickManualNote')}</div>`
+    : '';
 
   box.innerHTML = `
     ${stepIndicator}
     <div class="ytai-instr-text">${escapeHtml(step.instruction ?? t('fallbackInstruction'))}</div>
-    <button id="ytai-instr-ok">${btnLabel}</button>
+    ${manualNote}
+    <button id="ytai-instr-ok" type="button">${btnLabel}</button>
   `;
   document.body.appendChild(box);
+  const instruction = step.instruction ?? t('fallbackInstruction');
+  announce(instruction);
+  const token = ++_guideToken;
+  const spoken = speak(instruction);
 
   document.getElementById('ytai-instr-ok').addEventListener('click', () => {
     cancelAutoClick();
     advanceStep();
   });
 
-  if (_autoClick && (eType || eText)) {
-    startAutoClickCountdown(eType, eText);
+  if (autoClickHere) {
+    // 소리로 읽기가 켜져 있으면 다 읽은 뒤에 카운트다운을 시작한다
+    if (_view.tts) {
+      spoken.then(() => { if (token === _guideToken) startAutoClickCountdown(eType, eText); });
+    } else {
+      startAutoClickCountdown(eType, eText);
+    }
   }
 }
 
@@ -728,13 +1317,15 @@ function removeOverlay() {
 
 // ─── Error toast ──────────────────────────────────────────────────────────────
 
-function showErrorToast(message) {
+function showToast(message) {
   document.getElementById('ytai-toast')?.remove();
 
   const toast = document.createElement('div');
   toast.id = 'ytai-toast';
   toast.textContent = message;
   document.body.appendChild(toast);
+  announce(message);
+  speak(message);
 
   setTimeout(() => toast.remove(), 4000);
 }

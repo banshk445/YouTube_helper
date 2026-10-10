@@ -1,0 +1,11 @@
+{
+  "name": "youtube-ai-helper",
+  "private": true,
+  "description": "유튜브 AI 도우미 크롬 확장 — 개발용 테스트 설정 (확장 프로그램 자체는 빌드 없이 동작)",
+  "scripts": {
+    "test": "node tests/smoke.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
