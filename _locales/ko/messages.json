@@ -22,7 +22,6 @@
   "quickVolume":          { "message": "볼륨" },
   "quickSubtitles":       { "message": "자막" },
   "quickFullscreen":      { "message": "전체화면" },
-  "quickNext":            { "message": "다음 영상" },
   "quickLike":            { "message": "좋아요" },
   "quickSave":            { "message": "저장" },
   "quickSearch":          { "message": "검색" },
@@ -95,6 +94,11 @@
   "volumeStepMute":      { "message": "소리를 완전히 끄고 싶을 때는 이 버튼을 한 번 누르세요.\n다시 누르면 소리가 돌아와요." },
   "volumeSliderLabel":   { "message": "여기에 마우스를 올리세요" },
   "muteLabel":           { "message": "음소거 (소리 끄기/켜기)" },
+
+  "quickShare":          { "message": "공유" },
+  "shareCopiedStep":     { "message": "영상 주소를 복사해 두었어요.\n카카오톡 대화방의 글 쓰는 칸을 마우스 오른쪽 버튼으로 누르고 '붙여넣기'를 누르세요.\n(키보드로는 {key})" },
+  "shareNoVideo":        { "message": "보고 있는 영상이 없어요. 영상을 연 뒤에 눌러 주세요." },
+  "shareCopyFailed":     { "message": "주소를 복사하지 못했어요. 한 번 더 눌러 주세요." },
 
   "noTabError":           { "message": "탭 정보 없음" },
   "noStepsError":         { "message": "응답을 이해하지 못했어요. 다시 시도해주세요." },

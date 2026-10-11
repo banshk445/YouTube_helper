@@ -189,7 +189,7 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.waitForTimeout(100);
   await page.click('#ytai-btn');
   const types2 = await page.evaluate(() => [...document.querySelectorAll('.ytai-quick-btn')].map(b => b.dataset.type));
-  check('normal grid keeps next_video/fullscreen', types2.includes('next_video') && types2.includes('fullscreen'));
+  check('normal grid has share + fullscreen ' + types2.join(','), types2.includes('share_link') && types2.includes('fullscreen') && !types2.includes('next_video'));
 
   // 9. 말로 설정 바꾸기
   const cmd = async (text) => page.evaluate((t) => { window.__connected = 0; submitRequest(t); return [document.documentElement.dataset.ytaiSize, document.documentElement.dataset.ytaiColor, _view.tts, window.__connected]; }, text);
@@ -271,5 +271,39 @@ const watch = `<html><body style="margin:0;height:4000px">
     showOverlay({ steps: [{ instruction: '볼륨', element_type: 'volume', element_text: '음소거' }, { instruction: '끝' }] }); });
   await page.waitForTimeout(2600);
   check('AI volume step not auto-clicked', await page.evaluate(() => window.__muteClicks) === 0);
+
+  // 14. 공유: 누르면 영상 주소 바로 복사 + 붙여넣기 안내
+  html = watch;
+  const stubClipboard = () => page.evaluate(() => { window.__copied = null; navigator.clipboard.writeText = async (t) => { window.__copied = t; }; });
+  await load('https://www.youtube.com/watch?v=abc_123-X&t=42s');
+  await page.waitForTimeout(100);
+  await stubClipboard();
+  await page.click('#ytai-btn');
+  await page.click('[data-type=share_link]');
+  await page.waitForTimeout(200);
+  check('share copies youtu.be link', await page.evaluate(() => window.__copied) === 'https://youtu.be/abc_123-X');
+  check('share shows paste guide (stays until OK)', (await page.locator('.ytai-instr-text').textContent()).startsWith('shareCopiedStep'));
+  await page.click('#ytai-instr-ok');
+  // 쇼츠 주소
+  await load('https://www.youtube.com/shorts/SHORT_id9');
+  await page.waitForTimeout(100);
+  await stubClipboard();
+  await page.evaluate(() => shareCurrentVideo());
+  await page.waitForTimeout(200);
+  check('shorts share link', await page.evaluate(() => window.__copied) === 'https://youtube.com/shorts/SHORT_id9');
+  // 영상이 없는 홈 화면
+  await load('https://www.youtube.com/');
+  await page.waitForTimeout(100);
+  await stubClipboard();
+  await page.evaluate(() => shareCurrentVideo());
+  await page.waitForTimeout(200);
+  check('home: no copy, explains', await page.evaluate(() => window.__copied) === null && (await page.locator('#ytai-toast').textContent()) === 'shareNoVideo');
+  // 말로: "카톡으로 보내 줘"
+  await load('https://www.youtube.com/watch?v=vid42');
+  await page.waitForTimeout(100);
+  await stubClipboard();
+  await page.evaluate(() => { window.__connected = 0; submitRequest('이 영상 카톡으로 보내 줘'); });
+  await page.waitForTimeout(200);
+  check('voice "카톡으로 보내 줘" copies link, no AI', await page.evaluate(() => window.__copied === 'https://youtu.be/vid42' && window.__connected === 0));
   await browser.close();
 })();

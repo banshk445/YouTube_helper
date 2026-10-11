@@ -22,7 +22,6 @@
   "quickVolume":          { "message": "Volume" },
   "quickSubtitles":       { "message": "Subtitles" },
   "quickFullscreen":      { "message": "Fullscreen" },
-  "quickNext":            { "message": "Next video" },
   "quickLike":            { "message": "Like" },
   "quickSave":            { "message": "Save" },
   "quickSearch":          { "message": "Search" },
@@ -95,6 +94,11 @@
   "volumeStepMute":      { "message": "To turn the sound off completely, press this button once.\nPress it again to bring the sound back." },
   "volumeSliderLabel":   { "message": "Rest your mouse here" },
   "muteLabel":           { "message": "Mute (sound off/on)" },
+
+  "quickShare":          { "message": "Share" },
+  "shareCopiedStep":     { "message": "The video link is copied.\nIn your chat app, right-click the message box and choose 'Paste'.\n(Keyboard: {key})" },
+  "shareNoVideo":        { "message": "No video is open. Open a video first, then press this." },
+  "shareCopyFailed":     { "message": "Couldn't copy the link. Please press it once more." },
 
   "noTabError":           { "message": "No tab info" },
   "noStepsError":         { "message": "Couldn't understand the response. Please try again." },

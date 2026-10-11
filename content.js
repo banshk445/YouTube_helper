@@ -177,9 +177,9 @@ function createHelperPanel() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           <span>${t('quickFullscreen')}</span>
         </button>
-        <button class="ytai-quick-btn" data-slot="b" data-type="next_video" data-label="${t('quickNext')}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
-          <span>${t('quickNext')}</span>
+        <button class="ytai-quick-btn" data-slot="b" data-type="share_link" data-label="${t('quickShare')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <span>${t('quickShare')}</span>
         </button>
         <button class="ytai-quick-btn" data-type="like" data-label="${t('quickLike')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
@@ -581,6 +581,7 @@ const LOCAL_COMMANDS = {
     [/^자막(을|를)?더?(크게|키워)$/,                             () => captionFromCommand(1)],
     [/^자막(을|를)?더?(작게|줄여)$/,                             () => captionFromCommand(-1)],
     [/^보기설정(열어)?$/,                                         () => { openSettings(); return true; }],
+    [/^(이)?(영상)?(을|를)?(공유|카톡으로보내|카톡에보내|카카오톡으로보내|주소복사)(하기)?$/, () => { hidePanel(); shareCurrentVideo(); }],
   ],
   en: [
     [/^(make )?(the )?(text )?(bigger|larger)$|^zoom in$|^(increase|enlarge) (the )?text( size)?$/, () => stepViewSize(1)],
@@ -592,6 +593,7 @@ const LOCAL_COMMANDS = {
     [/^(make )?(the )?(captions|subtitles) (bigger|larger)$|^(bigger|larger) (captions|subtitles)$/, () => captionFromCommand(1)],
     [/^(make )?(the )?(captions|subtitles) smaller$|^smaller (captions|subtitles)$/,                 () => captionFromCommand(-1)],
     [/^(open )?display settings$/,                                                                 () => { openSettings(); return true; }],
+    [/^(share( (this|the) video)?|copy (the )?(video )?link)$/,                                    () => { hidePanel(); shareCurrentVideo(); }],
   ],
 };
 
@@ -1142,7 +1144,8 @@ function startAutoClickCountdown(elementType, elementText) {
 const QUICK_SLOTS = {
   normal: {
     a: { type: 'fullscreen', label: 'quickFullscreen', icon: '<polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>' },
-    b: { type: 'next_video', label: 'quickNext', icon: '<polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/>' },
+    // 어르신들이 마음에 드는 영상을 카톡으로 보내고 싶어 하셔서 "다음 영상" 대신 "공유"
+    b: { type: 'share_link', label: 'quickShare', icon: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>' },
   },
   shorts: {
     a: { type: 'prev_short', label: 'quickPrevShort', icon: '<polyline points="18,15 12,9 6,15"/>' },
@@ -1162,6 +1165,51 @@ function updateQuickGridForPage() {
     btn.dataset.label = t(def.label);
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${def.icon}</svg><span>${t(def.label)}</span>`;
   }
+}
+
+// ─── 공유: 영상 주소 바로 복사 ───────────────────────────────────────────────
+// 유튜브 공유 창은 열고 → 복사 누르고 → 닫는 단계가 많아 어르신께 번거롭다.
+// 도우미가 주소를 바로 복사하고, 카카오톡에 붙여넣는 방법만 안내한다.
+
+function currentShareUrl() {
+  const shorts = location.pathname.match(/^\/shorts\/([\w-]+)/);
+  if (shorts) return `https://youtube.com/shorts/${shorts[1]}`;
+  const v = new URLSearchParams(location.search).get('v');
+  if (location.pathname === '/watch' && v) return `https://youtu.be/${v}`;
+  return null;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // 클립보드 API가 막힌 경우 예전 방식으로
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    ta.remove();
+    return ok;
+  }
+}
+
+async function shareCurrentVideo() {
+  const url = currentShareUrl();
+  if (!url) {
+    showToast(t('shareNoVideo'));
+    return;
+  }
+  if (!(await copyText(url))) {
+    showToast(t('shareCopyFailed'));
+    return;
+  }
+  const pasteKey = /Mac/i.test(navigator.platform) ? 'Cmd+V' : 'Ctrl+V';
+  // 4초 뒤 사라지는 알림 대신, 다 읽고 "확인"을 누를 때까지 남는 안내 상자로 보여 준다
+  showOverlay({ steps: [{ instruction: t('shareCopiedStep').replace('{key}', pasteKey), element_type: null, element_text: null }] });
 }
 
 // 다음/이전 쇼츠로 넘기기. 1) 유튜브의 위/아래 이동 버튼 2) 없으면 옆 쇼츠로 스크롤
@@ -1188,6 +1236,11 @@ function quickAction(elementType, label) {
 
   if (elementType === 'next_short' || elementType === 'prev_short') {
     goShorts(elementType === 'next_short' ? 1 : -1);
+    return;
+  }
+
+  if (elementType === 'share_link') {
+    shareCurrentVideo();
     return;
   }
 
