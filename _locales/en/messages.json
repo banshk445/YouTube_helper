@@ -91,6 +91,11 @@
   "autoClickOff":        { "message": "Off" },
   "autoClickHint":       { "message": "After pointing at a button, presses it for you once the time is up. Only presses easy-to-undo buttons like Play or Volume." },
 
+  "volumeStepSlider":    { "message": "Rest your mouse on this button and a bar appears to its right.\nDrag the dot right to make it louder, left to make it quieter." },
+  "volumeStepMute":      { "message": "To turn the sound off completely, press this button once.\nPress it again to bring the sound back." },
+  "volumeSliderLabel":   { "message": "Rest your mouse here" },
+  "muteLabel":           { "message": "Mute (sound off/on)" },
+
   "noTabError":           { "message": "No tab info" },
   "noStepsError":         { "message": "Couldn't understand the response. Please try again." },
   "serverErrorPrefix":    { "message": "AI server error" }

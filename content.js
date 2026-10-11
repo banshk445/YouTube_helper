@@ -1003,7 +1003,7 @@ function startTracking(elementType, elementText) {
       if (p) { p.style.left = x + 'px'; p.style.top = y + 'px'; }
       if (a) { a.style.left = x + 'px'; a.style.top = y + 'px'; }
       if (l) {
-        l.style.left = x + 'px';
+        l.style.left = labelLeft(x, l) + 'px';
         l.style.top = labelTop(y, l) + 'px';
       }
     }
@@ -1020,6 +1020,14 @@ function labelTop(y, labelEl) {
   const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ytai-scale')) || 1;
   const arrowTop = y - 64 - 11 * scale;
   return arrowTop - 6 - (labelEl?.offsetHeight || 30 * scale);
+}
+
+// 이름표 가로 위치: 대상 가운데에 두되, 화면 가장자리 버튼(유튜브 볼륨 버튼 등)이면
+// 이름표가 화면 밖으로 잘리지 않게 안쪽으로 당긴다. (.ytai-target-label은 translateX(-50%))
+function labelLeft(x, labelEl) {
+  const half = (labelEl?.offsetWidth || 0) / 2;
+  const margin = 8;
+  return Math.min(Math.max(x, half + margin), window.innerWidth - half - margin);
 }
 
 function stopTracking() {
@@ -1077,9 +1085,10 @@ function advanceStep() {
 // 자동 클릭은 되돌리기 쉬운 버튼 종류만 허용한다. "위험한 것 막기"(단어 블랙리스트)는
 // 빠지는 게 생기고 "음소거 해제" 같은 멀쩡한 버튼까지 걸리므로 허용 목록 방식을 쓴다.
 // 구독(누르면 구독 취소가 될 수 있음)·싫어요, 그리고 종류 없이 이름만 있는 단계는
-// 사용자가 직접 눌러야 한다.
+// 사용자가 직접 눌러야 한다. 볼륨 버튼은 누르면 음소거가 되므로 빠진다 —
+// "소리 키워 줘"에 자동 클릭하면 오히려 소리가 꺼진다.
 const AUTO_CLICK_SAFE_TYPES = new Set([
-  'play', 'volume', 'subtitles', 'settings', 'fullscreen', 'theater', 'next_video',
+  'play', 'subtitles', 'settings', 'fullscreen', 'theater', 'next_video',
   'miniplayer', 'search', 'like', 'save', 'share', 'more_actions', 'home',
   'subscriptions', 'library', 'history', 'shorts', 'playlists_tab',
   'next_short', 'prev_short',
@@ -1182,6 +1191,18 @@ function quickAction(elementType, label) {
     return;
   }
 
+  // 볼륨 버튼은 누르면 음소거/해제만 된다. 소리 크기는 버튼 위에 마우스를 올리면
+  // 나오는 막대를 끌어서 바꾸므로, 막대 → 음소거 순서로 안내한다.
+  if (elementType === 'volume' && getElementCenter('volume', null)) {
+    showOverlay({
+      steps: [
+        { instruction: t('volumeStepSlider'), element_type: 'volume', element_text: null, target_label: t('volumeSliderLabel'), point_only: true },
+        { instruction: t('volumeStepMute'), element_type: 'volume', element_text: null, target_label: t('muteLabel'), point_only: true },
+      ]
+    });
+    return;
+  }
+
   // 홈·구독·보관함·검색은 버튼이 안 보일 때 직접 이동
   const NAV_URLS = {
     home:          'https://www.youtube.com/',
@@ -1241,8 +1262,11 @@ function showStep(index) {
   const eType = step.element_type ?? null;
   const eText = step.element_text ?? null;
   const hasTarget = !!(eType || eText);
+  // 위치만 보여 주는 단계 (볼륨 막대처럼 마우스를 올리거나 끌어야 하는 조작).
+  // 대상을 누르면 다른 동작(음소거)이 되므로 눌러도 다음 단계로 넘기지 않고, 자동 클릭도 하지 않는다.
+  const pointOnly = step.point_only === true;
   let targetY = null;
-  const autoClickHere = _view.autoClick > 0 && hasTarget && canAutoClick(eType, eText);
+  const autoClickHere = !pointOnly && _view.autoClick > 0 && hasTarget && canAutoClick(eType, eText);
 
   if (hasTarget) {
     // 일반 영상 화면에서 스크롤로 버튼이 화면 밖에 있으면 보이는 곳으로 가져온다
@@ -1271,10 +1295,13 @@ function showStep(index) {
     }
     document.body.appendChild(overlay);
     // 높이를 알아야 위치를 정할 수 있어서 화면에 붙인 뒤에 계산
-    if (label) label.style.top = labelTop(initY, label) + 'px';
+    if (label) {
+      label.style.top = labelTop(initY, label) + 'px';
+      label.style.left = labelLeft(initX, label) + 'px';
+    }
     startTracking(eType, eText);
     // 자동 클릭 모드면 카운트다운 후 자동 클릭, 아니면 사용자가 누를 때 다음 단계로
-    if (!autoClickHere && !isLast) {
+    if (!autoClickHere && !pointOnly && !isLast) {
       attachClickAdvance(eType, eText);
     }
   }
@@ -1288,9 +1315,9 @@ function showStep(index) {
     ? `<div class="ytai-step-indicator">${index + 1} / ${total}</div>`
     : '';
 
-  const btnLabel = isLast ? t('confirmBtn') : (autoClickHere ? t('autoClickCountdown').replace('{n}', _view.autoClick) : (hasTarget ? t('skipBtn') : t('nextBtn')));
+  const btnLabel = isLast ? t('confirmBtn') : (autoClickHere ? t('autoClickCountdown').replace('{n}', _view.autoClick) : (hasTarget && !pointOnly ? t('skipBtn') : t('nextBtn')));
   // 자동 클릭을 켰지만 이 버튼은 안전 목록 밖이라 직접 눌러야 하는 경우
-  const manualNote = _view.autoClick > 0 && hasTarget && !autoClickHere
+  const manualNote = _view.autoClick > 0 && hasTarget && !autoClickHere && !pointOnly
     ? `<div class="ytai-instr-note">${t('autoClickManualNote')}</div>`
     : '';
 

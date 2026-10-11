@@ -744,6 +744,15 @@ html[data-ytai-color="contrast"] {
   letter-spacing: -0.2px;
 }
 
+/* 한국어 줄바꿈: 낱말 중간("커지/고")에서 끊기지 않게 */
+#ytai-panel,
+#ytai-instruction,
+#ytai-toast,
+.ytai-target-label {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 /* ─── 접근성 공통 ─────────────────────────────────────────────────────────── */
 
 /* 화면에는 안 보이고 화면낭독기만 읽는 영역 */

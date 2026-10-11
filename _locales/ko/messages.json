@@ -91,6 +91,11 @@
   "autoClickOff":        { "message": "끄기" },
   "autoClickHint":       { "message": "버튼을 가리킨 뒤 정한 시간이 지나면 대신 눌러 드려요. 재생·볼륨처럼 되돌리기 쉬운 버튼만 눌러요." },
 
+  "volumeStepSlider":    { "message": "이 버튼 위에 마우스를 올려 두면 오른쪽에 막대가 나타나요.\n막대의 동그라미를 오른쪽으로 끌면 소리가 커지고, 왼쪽으로 끌면 작아져요." },
+  "volumeStepMute":      { "message": "소리를 완전히 끄고 싶을 때는 이 버튼을 한 번 누르세요.\n다시 누르면 소리가 돌아와요." },
+  "volumeSliderLabel":   { "message": "여기에 마우스를 올리세요" },
+  "muteLabel":           { "message": "음소거 (소리 끄기/켜기)" },
+
   "noTabError":           { "message": "탭 정보 없음" },
   "noStepsError":         { "message": "응답을 이해하지 못했어요. 다시 시도해주세요." },
   "serverErrorPrefix":    { "message": "AI 서버 오류" }

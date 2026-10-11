@@ -251,5 +251,25 @@ const watch = `<html><body style="margin:0;height:4000px">
   const snapTexts = await page.evaluate(() => getPageSnapshot().map(e => e.t));
   check('snapshot excludes own UI ' + JSON.stringify(snapTexts), !snapTexts.some(t => /^(zoomInLabel|zoomOutLabel|closeLabel)$/.test(t)) && snapTexts.includes('재생'));
   check('finder never points at own close button', await page.evaluate(() => findElementByTextContent('closeLabel')) === null);
+
+  // 13. 볼륨: 막대 끌기 → 음소거 두 단계, 누르거나 자동 클릭해도 음소거되지 않게
+  html = watch.replace('</body>', '<button class="ytp-mute-button" aria-label="음소거" style="position:absolute;top:100px;left:160px;width:40px;height:40px">🔊</button></body>');
+  await load('https://www.youtube.com/watch?v=x', true); // 자동 클릭 켠 상태
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { window.__muteClicks = 0; document.querySelector('.ytp-mute-button').addEventListener('click', () => window.__muteClicks++); quickAction('volume', '볼륨'); });
+  check('volume guide step 1 = slider', (await page.locator('.ytai-instr-text').textContent()) === 'volumeStepSlider' && (await page.locator('.ytai-step-indicator').textContent()) === '1 / 2');
+  check('volume step 1 button says next, no countdown', (await page.locator('#ytai-instr-ok').textContent()) === 'nextBtn');
+  await page.waitForTimeout(2600);
+  check('volume never auto-clicked (no accidental mute)', await page.evaluate(() => window.__muteClicks) === 0);
+  await page.evaluate(() => document.querySelector('.ytp-mute-button').click());
+  await page.waitForTimeout(400);
+  check('clicking mute on step 1 does not jump to step 2', (await page.locator('.ytai-instr-text').textContent()) === 'volumeStepSlider');
+  await page.click('#ytai-instr-ok');
+  check('next → step 2 = mute', (await page.locator('.ytai-instr-text').textContent()) === 'volumeStepMute');
+  // AI가 point_only 없이 볼륨 단계를 줘도 자동 클릭하지 않음
+  await page.evaluate(() => { removeOverlay(); stopTracking(); detachClickAdvance(); window.__muteClicks = 0;
+    showOverlay({ steps: [{ instruction: '볼륨', element_type: 'volume', element_text: '음소거' }, { instruction: '끝' }] }); });
+  await page.waitForTimeout(2600);
+  check('AI volume step not auto-clicked', await page.evaluate(() => window.__muteClicks) === 0);
   await browser.close();
 })();
