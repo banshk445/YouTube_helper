@@ -9,7 +9,8 @@ preview_urls = false
 [vars]
 # 확장 프로그램 ID. 로컬 테스트 ID와 웹스토어 ID가 다르므로 쉼표로 둘 다 넣어도 된다.
 # 로그로 확인한 실제 값. 웹스토어에 게시하면 ID가 또 바뀌므로 그때 쉼표로 추가할 것.
-ALLOWED_ORIGINS = "chrome-extension://nkblggfpnfccdpanobgkhgolllgojjap"
+# 두 번째 ID(iehpm…)는 팀원·심사위원용 zip의 고정 ID (pack.sh가 manifest에 key를 넣어 만듦)
+ALLOWED_ORIGINS = "chrome-extension://nkblggfpnfccdpanobgkhgolllgojjap,chrome-extension://iehpmbohmlfbgeikcafbhbphhpjhcioe"
 ENFORCE_ORIGIN = "true"
 
 # IP당 60초에 10회. workers.dev 도메인에는 Cloudflare WAF 룰이 안 걸리므로

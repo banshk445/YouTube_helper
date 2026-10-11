@@ -16,22 +16,17 @@
 
 코드를 고친 뒤에는 `chrome://extensions`에서 이 확장의 새로고침(↻) 버튼을 누르고, **유튜브 탭도 새로고침**해야 반영됩니다.
 
-### AI 질문이 안 될 때 (알려진 문제)
+### AI 질문이 안 될 때 ("허용되지 않은 출처입니다")
 
-빠른 버튼·보기 설정은 바로 되지만, **"AI에게 물어보기"는 거절될 수 있습니다.**
-AI 요청을 받는 서버(Cloudflare Worker)는 등록된 확장 프로그램 ID에서 온 요청만 받는데,
-압축해제로 설치하면 사람마다 ID가 다르게 나오기 때문입니다.
+AI 요청을 받는 서버(Cloudflare Worker)는 `worker/wrangler.toml`의 `ALLOWED_ORIGINS`에 등록된 확장 프로그램 ID에서 온 요청만 받습니다.
+압축해제로 설치하면 폴더마다 ID가 달라지므로, **팀원용 zip으로 설치하세요.** 팀원용 zip은 `manifest.json`에 공개 키(`key`)가 들어 있어
+어느 폴더에 설치해도 ID가 `iehpmbohmlfbgeikcafbhbphhpjhcioe`로 같고, 이 ID는 허용 목록에 들어 있습니다.
 
-`manifest.json`에 `key` 값을 넣어 모두의 ID를 같게 만들면 해결됩니다 (팀장이 한 번만 하면 됨).
-
-1. `chrome://extensions` → **확장 프로그램 압축** → 이 폴더 선택 → `.crx`와 `.pem` 파일이 생김
-2. 공개 키 뽑기
-   ```sh
-   openssl rsa -in YouTube_helper.pem -pubout -outform DER | openssl base64 -A
-   ```
-3. 나온 문자열을 `manifest.json`에 `"key": "..."`로 추가 → 다시 로드하면 ID가 고정됨
-4. 그 ID를 `worker/wrangler.toml`의 `ALLOWED_ORIGINS`에 `chrome-extension://<ID>`로 추가하고 Worker 재배포
-5. **`.pem` 파일은 절대 저장소에 올리지 말 것** (`.gitignore`에 이미 들어 있음). 팀장만 보관
+- 팀원용 zip 만들기 (팀장): `extension-key.txt`를 저장소 폴더에 두고 `./pack.sh` → `../youtube-ai-helper-team.zip`
+- 같은 `./pack.sh`가 웹스토어용 `../youtube-ai-helper-store.zip`도 만듭니다 (스토어는 `key` 필드를 받지 않아서 뺌)
+- **`extension-key.txt`는 저장소에 올리지 않습니다** (`.gitignore`). 공개 저장소라 올리면 누구나 이 ID로 Worker를 쓸 수 있게 됩니다. 팀장이 보관하고, 코드를 고치는 팀원에게만 따로 전달합니다
+- 코드를 직접 고치는 팀원은 받은 `extension-key.txt`로 `./pack.sh`를 돌려 만든 팀원용 zip을 설치해 테스트합니다 (저장소 폴더를 그대로 로드하면 ID가 달라 AI 질문이 거절됨)
+- 허용 목록을 바꾼 뒤에는 **Worker를 다시 배포해야** 적용됩니다
 
 ## 2. 작업 순서 (브랜치 → PR)
 
