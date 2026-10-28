@@ -165,6 +165,22 @@ function createHelperPanel() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3 19,12 5,21"/></svg>
           <span>${t('quickPlay')}</span>
         </button>
+        <button class="ytai-quick-btn" data-type="replay" data-label="${t('quickReplay')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 1,10 7,10"/><path d="M3.5,15a9,9 0 1 0 2.1-9.4L1,10"/></svg>
+          <span>${t('quickReplay')}</span>
+        </button>
+        <button class="ytai-quick-btn" data-type="seek_back" data-label="${t('quickBack10')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11,17 6,12 11,7"/><polyline points="18,17 13,12 18,7"/></svg>
+          <span>${t('quickBack10')}</span>
+        </button>
+        <button class="ytai-quick-btn" data-type="seek_fwd" data-label="${t('quickFwd10')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13,17 18,12 13,7"/><polyline points="6,17 11,12 6,7"/></svg>
+          <span>${t('quickFwd10')}</span>
+        </button>
+        <button class="ytai-quick-btn" data-type="speed" data-label="${t('quickSlow')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><polyline points="12,9 12,13 14,15"/><line x1="10" y1="2" x2="14" y2="2"/></svg>
+          <span>${t('quickSlow')}</span>
+        </button>
         <button class="ytai-quick-btn" data-type="volume" data-label="${t('quickVolume')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M19.07,4.93a10,10,0,0,1,0,14.14"/><path d="M15.54,8.46a5,5,0,0,1,0,7.07"/></svg>
           <span>${t('quickVolume')}</span>
@@ -581,6 +597,11 @@ const LOCAL_COMMANDS = {
     [/^자막(을|를)?더?(크게|키워)$/,                             () => captionFromCommand(1)],
     [/^자막(을|를)?더?(작게|줄여)$/,                             () => captionFromCommand(-1)],
     [/^보기설정(열어)?$/,                                         () => { openSettings(); return true; }],
+    [/^(10|십)초(만)?(전|전으로|뒤로|되감아|돌려)(가|돌려|감아)?$|^(되감기|되감아|뒤로감기)$/,      () => quickAction('seek_back', t('quickBack10'))],
+    [/^(10|십)초(만)?(후|후로|앞으로|건너뛰어|넘겨)(가|넘겨)?$|^(건너뛰기|건너뛰어|앞으로감기)$/, () => quickAction('seek_fwd', t('quickFwd10'))],
+    [/^(처음부터|처음으로)(다시)?(봐|틀어|재생|보기|돌려)?$|^다시(틀어|봐|재생)$/,              () => quickAction('replay', t('quickReplay'))],
+    [/^(천천히|느리게|속도(를)?(줄여|느리게))(봐|틀어|재생)?$/,                                  () => setSpeed(0.75)],
+    [/^(원래|보통|정상)속도(로|으로)?(돌려|틀어|바꿔)?$/,                                      () => setSpeed(1)],
   ],
   en: [
     [/^(make )?(the )?(text )?(bigger|larger)$|^zoom in$|^(increase|enlarge) (the )?text( size)?$/, () => stepViewSize(1)],
@@ -592,6 +613,11 @@ const LOCAL_COMMANDS = {
     [/^(make )?(the )?(captions|subtitles) (bigger|larger)$|^(bigger|larger) (captions|subtitles)$/, () => captionFromCommand(1)],
     [/^(make )?(the )?(captions|subtitles) smaller$|^smaller (captions|subtitles)$/,                 () => captionFromCommand(-1)],
     [/^(open )?display settings$/,                                                                 () => { openSettings(); return true; }],
+    [/^(go )?back( 10| ten)?( seconds)?$|^rewind$/,                                                () => quickAction('seek_back', t('quickBack10'))],
+    [/^(go )?forward( 10| ten)?( seconds)?$|^skip( ahead)?$|^fast forward$/,                       () => quickAction('seek_fwd', t('quickFwd10'))],
+    [/^(start over|replay|watch again|play (it )?from the (start|beginning))$/,                   () => quickAction('replay', t('quickReplay'))],
+    [/^(slow down|slower|play slower|slow)$/,                                                      () => setSpeed(0.75)],
+    [/^(normal|regular) speed$/,                                                                   () => setSpeed(1)],
   ],
 };
 
@@ -1123,7 +1149,7 @@ function startAutoClickCountdown(elementType, elementText) {
 const QUICK_SLOTS = {
   normal: {
     a: { type: 'fullscreen', label: 'quickFullscreen', icon: '<polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>' },
-    b: { type: 'next_video', label: 'quickNext', icon: '<polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/>' },
+    b: null,  // 일반 영상 화면에서는 이 칸을 숨긴다 (쇼츠에서만 다음 쇼츠 버튼)
   },
   shorts: {
     a: { type: 'prev_short', label: 'quickPrevShort', icon: '<polyline points="18,15 12,9 6,15"/>' },
@@ -1139,6 +1165,8 @@ function updateQuickGridForPage() {
   for (const [slot, def] of Object.entries(QUICK_SLOTS[mode])) {
     const btn = grid.querySelector(`[data-slot="${slot}"]`);
     if (!btn) continue;
+    btn.style.display = def ? '' : 'none';
+    if (!def) { btn.dataset.type = ''; continue; }
     btn.dataset.type = def.type;
     btn.dataset.label = t(def.label);
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${def.icon}</svg><span>${t(def.label)}</span>`;
@@ -1147,7 +1175,9 @@ function updateQuickGridForPage() {
 
 // 다음/이전 쇼츠로 넘기기. 1) 유튜브의 위/아래 이동 버튼 2) 없으면 옆 쇼츠로 스크롤
 function goShorts(dir) {
-  const btn = pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS[dir > 0 ? 'next_short' : 'prev_short'])]);
+  // 창이 좁으면 유튜브가 이동 버튼을 숨기지만(크기 0) 눌러도 동작하므로 숨은 버튼도 쓴다
+  const navBtns = [...document.querySelectorAll(ELEMENT_SELECTORS[dir > 0 ? 'next_short' : 'prev_short'])];
+  const btn = pickOnScreen(navBtns) || navBtns[0];
   if (btn) {
     btn.click();
   } else {
@@ -1164,8 +1194,82 @@ function goShorts(dir) {
   return true;
 }
 
+// 건너뛰기 결과를 시간 막대로 보여준다: 흐린 점 = 이전 위치, 진한 점 = 지금 위치
+function fmtTime(sec) {
+  sec = Math.floor(sec || 0);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+}
+
+let _seekStart = null, _seekTimer = null;
+
+function showSeek(label, before, after, duration) {
+  // 연달아 누르면 상자를 새로 만들지 않고 내용만 바꾼다. 출발점은 처음 누른 시점을 유지해
+  // "모두 얼마나 움직였는지"가 한눈에 보이게 한다.
+  let box = document.getElementById('ytai-seek');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'ytai-seek';
+    document.body.appendChild(box);
+    _seekStart = before;
+  }
+  const pct = (x) => duration > 0 && isFinite(duration) ? Math.min(100, Math.max(0, x / duration * 100)) : 0;
+  box.innerHTML = `
+    <div class="ytai-seek-label">${label}</div>
+    <div class="ytai-seek-times"><span>${fmtTime(_seekStart)}</span><span class="ytai-seek-arrow">→</span><strong>${fmtTime(after)}</strong></div>
+    <div class="ytai-seek-track">
+      <div class="ytai-seek-fill" style="width:${pct(after)}%"></div>
+      <div class="ytai-seek-dot ytai-seek-old" style="left:${pct(_seekStart)}%"></div>
+      <div class="ytai-seek-dot ytai-seek-new" style="left:${pct(after)}%"></div>
+    </div>
+    <div class="ytai-seek-hint">${t('seekKeyHint')}</div>`;
+  // 소리 안내는 speak()가 이전 발화를 끊으므로 연타해도 마지막 것만 들린다
+  const msg = `${label}. ${fmtTime(after)}`;
+  announce(msg);
+  speak(msg);
+  clearTimeout(_seekTimer);
+  _seekTimer = setTimeout(() => box.remove(), 4000);
+}
+
+// 쇼츠는 쇼츠마다 video가 따로 있어서 첫 번째가 아니라 지금 재생 중인 것을 골라야 한다
+function currentVideo() {
+  return pickOnScreen([...document.querySelectorAll('video')]);
+}
+
+// rate가 null이면 천천히(0.75배) ↔ 원래 속도를 오간다
+function setSpeed(rate) {
+  const v = currentVideo();
+  if (!v) { showToast(t('notFoundToast').replace('{label}', t('quickSlow'))); return; }
+  v.playbackRate = rate ?? (v.playbackRate < 1 ? 1 : 0.75);
+  showToast(t(v.playbackRate < 1 ? 'slowOnToast' : 'slowOffToast'));
+}
+
 function quickAction(elementType, label) {
   hidePanel();
+
+  // 되감기·건너뛰기는 가리킬 버튼이 없어 영상에 바로 적용한다
+  if (elementType === 'speed') {
+    setSpeed(null);
+    return;
+  }
+
+  if (elementType === 'replay' || elementType === 'seek_back' || elementType === 'seek_fwd') {
+    // 광고 중에 되감으면 광고를 처음부터 다시 봐야 하므로 건드리지 않는다
+    if (document.querySelector('.html5-video-player.ad-showing')) { showToast(t('seekAdToast')); return; }
+    const v = currentVideo();
+    if (!v) { showToast(t('notFoundToast').replace('{label}', label)); return; }
+    const before = v.currentTime;
+    if (elementType === 'replay') v.currentTime = 0;
+    else {
+      // 끝까지 건너뛰면 영상이 끝나 자동재생이 다음 영상을 트므로 끝 근처에서는 막는다
+      const target = before + (elementType === 'seek_fwd' ? 10 : -10);
+      if (elementType === 'seek_fwd' && v.duration && target >= v.duration - 1) { showToast(t('seekEndToast')); return; }
+      v.currentTime = Math.max(0, target);
+    }
+    if (elementType === 'replay') v.play();
+    showSeek(label, before, v.currentTime, v.duration);
+    return;
+  }
 
   if (elementType === 'next_short' || elementType === 'prev_short') {
     goShorts(elementType === 'next_short' ? 1 : -1);

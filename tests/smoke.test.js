@@ -189,7 +189,7 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.waitForTimeout(100);
   await page.click('#ytai-btn');
   const types2 = await page.evaluate(() => [...document.querySelectorAll('.ytai-quick-btn')].map(b => b.dataset.type));
-  check('normal grid keeps next_video/fullscreen', types2.includes('next_video') && types2.includes('fullscreen'));
+  check('normal grid has fullscreen, no next_video', !types2.includes('next_video') && types2.includes('fullscreen'));
 
   // 9. 말로 설정 바꾸기
   const cmd = async (text) => page.evaluate((t) => { window.__connected = 0; submitRequest(t); return [document.documentElement.dataset.ytaiSize, document.documentElement.dataset.ytaiColor, _view.tts, window.__connected]; }, text);
