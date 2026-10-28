@@ -6,6 +6,8 @@ const AREA = YTAI_LANG === 'en'
   : { main: '메인', player: '플레이어', sidebar: '사이드바', header: '헤더', right: '우측' };
 
 const MIC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+// 말로 찾아 틀기: 검색 화면으로 넘어가며 남기는 표시 (initHelper가 바로 읽으므로 위에 둔다)
+const PLAY_KEY = 'ytai-play-query';
 
 // Prevent double injection
 if (window.__ytAiHelperLoaded) {
@@ -23,6 +25,7 @@ function initHelper() {
   listenForShortcuts();
   watchMiniplayer();
   watchMediaLabels();
+  resumeVoicePlay();
 }
 
 // ─── 유튜브가 붙인 표시를 크게 알려 주기 ─────────────────────────────────────
@@ -689,12 +692,62 @@ function normalizeCommand(text) {
 
 function handleLocalCommand(text) {
   const n = normalizeCommand(text);
-  if (!n || n.length > 20) return false;
-  for (const [re, run] of LOCAL_COMMANDS[YTAI_LANG]) {
-    // 규칙이 false를 돌려주면 처리하지 않은 것 → 다음 규칙이나 AI로
-    if (re.test(n) && run() !== false) return true;
+  if (!n) return false;
+  if (n.length <= 20) {
+    for (const [re, run] of LOCAL_COMMANDS[YTAI_LANG]) {
+      // 규칙이 false를 돌려주면 처리하지 않은 것 → 다음 규칙이나 AI로
+      if (re.test(n) && run() !== false) return true;
+    }
   }
-  return false;
+  // 위 명령에 하나도 안 맞을 때만 "임영웅 노래 틀어 줘" 같은 찾아 틀기로 본다
+  return playFromCommand(text);
+}
+
+// ─── 말로 찾아서 바로 틀기 ──────────────────────────────────────────────────
+// "임영웅 노래 틀어 줘" → 검색 결과의 첫 영상(광고·쇼츠 제외)을 바로 재생한다.
+// 화면 버튼이나 질문("구독 버튼 어디 있는지 보여 줘")은 검색어로 쓰지 않고 AI 안내로 보낸다.
+const PLAY_RE = {
+  ko: /^(.+?)\s*(좀\s*)?(틀어|들려|보여|듣고\s*싶|보고\s*싶)/,
+  en: /^(?:play|put on)\s+(.+)$/i,
+};
+const PLAY_NOT_QUERY = /어디|어떻게|어떡|뭐|왜|방법|버튼|설정|자막|소리|볼륨|화면|글씨|글자|광고|다음|이전|다시|처음|맨앞|구독|보관함|기록|이거|이것|그거|이\s*영상|속도|천천히|빠르게|느리게|button|setting|caption|next|again/i;
+function playFromCommand(text) {
+  const m = text.trim().match(PLAY_RE[YTAI_LANG]);
+  const query = m?.[1].replace(/[.,!?~]/g, '').trim();
+  if (!query || query.length < 2 || PLAY_NOT_QUERY.test(query)) return false;
+  startVoicePlay(query);
+  return true;
+}
+
+function startVoicePlay(query) {
+  hidePanel();
+  showToast(t('playSearchToast').replace('{q}', query));
+  // 검색 화면으로 새로 이동하면 이 스크립트도 새로 뜨므로, 무엇을 틀지 잠깐 적어 둔다
+  sessionStorage.setItem(PLAY_KEY, JSON.stringify({ query, at: Date.now() }));
+  setTimeout(() => {
+    location.href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
+  }, 1200);
+}
+
+// 검색 화면에서 이어서: 첫 일반 영상을 눌러 재생 (10초 안에 안 나오면 알림)
+function resumeVoicePlay() {
+  let saved;
+  try { saved = JSON.parse(sessionStorage.getItem(PLAY_KEY)); } catch { saved = null; }
+  sessionStorage.removeItem(PLAY_KEY);
+  if (!saved || Date.now() - saved.at > 20000 || location.pathname !== '/results') return;
+  const started = Date.now();
+  const timer = setInterval(() => {
+    const link = [...document.querySelectorAll('ytd-video-renderer a#video-title')]
+      .find(a => a.href.includes('/watch?v='));
+    if (link) {
+      clearInterval(timer);
+      showToast(t('playStartToast').replace('{title}', link.textContent.trim()));
+      link.click();
+    } else if (Date.now() - started > 10000) {
+      clearInterval(timer);
+      showToast(t('playNotFoundToast').replace('{q}', saved.query));
+    }
+  }, 300);
 }
 
 function setTtsFromCommand(on) {

@@ -265,7 +265,7 @@ const watch = `<html><body style="margin:0;height:4000px">
         : name === 'quick' ? { seek_back: 'back', seek_fwd: 'fwd', replay: 'replay' }[a[0]] : name;
     };
     Object.assign(window, {
-      quickAction: rec('quick'), setSpeed: rec('speed'), turnOnCaptions: rec('cc'), volumeUp: rec('vol'),
+      quickAction: rec('quick'), setSpeed: rec('speed'), turnOnCaptions: rec('cc'), volumeUp: rec('vol'), startVoicePlay: rec('play'),
       stepViewSize: rec('size'), captionFromCommand: rec('ccsize'), setColorFromCommand: rec('color'), setTtsFromCommand: rec('tts'),
       currentVideo: () => ({ playbackRate: window.__rate }),
     });
@@ -280,5 +280,19 @@ const watch = `<html><body style="margin:0;height:4000px">
   check(`voice phrases ${phrases.length - wrong.length}/${phrases.length}` + (wrong.length ? ': ' + wrong.join(', ') : ''), wrong.length === 0);
   const plainNormal = await page.evaluate(() => { window.__did = 'AI'; window.__rate = 1; handleLocalCommand('원래대로'); return window.__did; });
   check('"원래대로" at normal speed goes to AI', plainNormal === 'AI');
+
+  // 14. 말로 찾아 틀기: 검색어를 뽑고, 검색 화면에서 광고·쇼츠를 건너뛴 첫 영상을 누름
+  check('play query extracted', await page.evaluate(() => {
+    let q; window.startVoicePlay = x => { q = x; }; playFromCommand('임영웅 노래 좀 틀어 줘요'); return q;
+  }) === '임영웅 노래');
+  html = `<html><body><ytd-ad-slot-renderer><a id="video-title" href="/watch?v=ad">광고</a></ytd-ad-slot-renderer>
+    <ytd-video-renderer><a id="video-title" href="/shorts/s1">쇼츠</a></ytd-video-renderer>
+    <ytd-video-renderer><a id="video-title" href="/watch?v=good" onclick="window.__clicked=this.href;return false">임영웅 - 사랑은 늘 도망가</a></ytd-video-renderer></body></html>`;
+  await page.goto('https://www.youtube.com/results?search_query=x');
+  await page.evaluate(() => sessionStorage.setItem('ytai-play-query', JSON.stringify({ query: '임영웅', at: Date.now() })));
+  await load('https://www.youtube.com/results?search_query=x');
+  await page.waitForTimeout(700);
+  check('voice play clicks first real video', (await page.evaluate(() => window.__clicked || '')).endsWith('/watch?v=good'));
+  check('voice play flag cleared', await page.evaluate(() => sessionStorage.getItem('ytai-play-query')) === null);
   await browser.close();
 })();
