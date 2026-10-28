@@ -22,6 +22,44 @@ function initHelper() {
   loadViewSettings();
   listenForShortcuts();
   watchMiniplayer();
+  watchMediaLabels();
+}
+
+// ─── 유튜브가 붙인 표시를 크게 알려 주기 ─────────────────────────────────────
+// 설명란 '콘텐츠 생성 방식'의 "AI로 제작"·"자동 더빙"과, 영상 시작 때 몇 초만 뜨는
+// "유료 프로모션 포함"을 쉬운 말로 크게 알린다. 직접 판정하지 않고 유튜브 표시만 옮긴다.
+// 표시가 없으면 아무 말도 하지 않는다 ("AI 아님"이라고 말하면 오히려 믿게 되므로).
+
+// "자동 더빙"은 '다른 언어 오디오 트랙을 자동 생성'이라는 뜻이라 지금 듣는 소리와 무관할 수
+// 있어 알리지 않는다. 영어로 "AI dubbed"일 수 있어 AI보다 먼저 걸러 낸다.
+const MEDIA_LABELS = [
+  { re: /더빙|dub/i,                msg: null },
+  { re: /AI|altered|synthetic/i,   msg: 'labelAiToast' },
+];
+
+function watchMediaLabels() {
+  let navAt = Date.now();
+  const shown = new Set();  // "영상ID:문구" — 영상마다 한 번만 알린다
+  document.addEventListener('yt-navigate-finish', () => { navAt = Date.now(); });
+  setInterval(() => {
+    const vid = new URL(location.href).searchParams.get('v');
+    // 이동 직후엔 설명란이 이전 영상 것일 수 있어 잠깐 기다리고, 광고 중에는 미룬다
+    if (!vid || Date.now() - navAt < 1500 || document.querySelector('.html5-video-player.ad-showing')) return;
+    if (document.querySelector('ytd-watch-flexy')?.getAttribute('video-id') !== vid) return;
+    const found = new Set();
+    for (const el of document.querySelectorAll('ytd-watch-metadata how-this-was-made-section-view-model')) {
+      const header = el.querySelector('[class*="BodyHeader"]')?.textContent || '';
+      const label = MEDIA_LABELS.find(l => l.re.test(header));
+      if (label?.msg) found.add(label.msg);
+    }
+    // 협찬 표시는 몇 초 보였다가 숨으므로 보이는 순간에 잡는다
+    const paid = document.querySelector('.ytp-paid-content-overlay-link');
+    if (paid && paid.style.display !== 'none' && paid.textContent.trim()) found.add('labelPaidToast');
+    const fresh = [...found].filter(m => !shown.has(vid + ':' + m));
+    if (!fresh.length) return;
+    fresh.forEach(m => shown.add(vid + ':' + m));
+    showToast(fresh.map(t).join(' '), 8000);
+  }, 1000);
 }
 
 // ─── 미니플레이어 피하기 ─────────────────────────────────────────────────────
@@ -1421,7 +1459,7 @@ function removeOverlay() {
 
 // ─── Error toast ──────────────────────────────────────────────────────────────
 
-function showToast(message) {
+function showToast(message, ms = 4000) {
   document.getElementById('ytai-toast')?.remove();
 
   const toast = document.createElement('div');
@@ -1431,7 +1469,7 @@ function showToast(message) {
   announce(message);
   speak(message);
 
-  setTimeout(() => toast.remove(), 4000);
+  setTimeout(() => toast.remove(), ms);
 }
 
 function escapeHtml(str) {

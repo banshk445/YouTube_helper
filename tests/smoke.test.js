@@ -242,5 +242,18 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.waitForTimeout(300);
   check('xlarge panel fits without inner scroll? ' + await page.evaluate(() => { const p = document.getElementById('ytai-panel'); return p.scrollHeight + '/' + p.clientHeight; }), true);
   await page.screenshot({ path: path.join(SHOTS, 'panel-xlarge.png') });
+
+  // 12. 유튜브 표시 알리기: AI 제작·협찬은 알리고, 자동 더빙만 있으면 조용히
+  const labeled = (header, paid) => `<html><body><ytd-watch-flexy video-id="x"></ytd-watch-flexy>
+    <ytd-watch-metadata><how-this-was-made-section-view-model><div class="ytwHowThisWasMadeSectionViewModelBodyHeader">${header}</div></how-this-was-made-section-view-model></ytd-watch-metadata>
+    <div class="ytp-paid-content-overlay"><a class="ytp-paid-content-overlay-link" style="display:${paid ? '' : 'none'}">${paid ? '유료 프로모션 포함' : ''}</a></div></body></html>`;
+  const toastAfterWait = async () => { await page.waitForTimeout(2600); return page.evaluate(() => document.getElementById('ytai-toast')?.textContent || ''); };
+  html = labeled('AI로 제작', true);
+  await load('https://www.youtube.com/watch?v=x');
+  const both = await toastAfterWait();
+  check('AI + paid labels announced: ' + both, both.includes('labelAiToast') && both.includes('labelPaidToast'));
+  html = labeled('자동 더빙', false);
+  await load('https://www.youtube.com/watch?v=x');
+  check('auto-dub alone stays silent', (await toastAfterWait()) === '');
   await browser.close();
 })();

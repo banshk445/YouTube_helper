@@ -28,6 +28,8 @@
   "seekAdToast": { "message": "광고가 끝난 뒤에 쓸 수 있어요." },
   "seekEndToast": { "message": "영상 끝이라 더 넘길 수 없어요." },
   "seekKeyHint": { "message": "키보드 J(뒤로) · L(앞으로)로도 10초씩 움직여요" },
+  "labelAiToast": { "message": "이 영상은 'AI로 만들었거나 바꾼 영상'이라고 표시돼 있어요. 실제와 다를 수 있어요." },
+  "labelPaidToast": { "message": "이 영상에는 광고(협찬)가 들어 있어요." },
   "quickVolume":          { "message": "볼륨" },
   "quickSubtitles":       { "message": "자막" },
   "quickFullscreen":      { "message": "전체화면" },
