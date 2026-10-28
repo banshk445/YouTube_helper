@@ -6,6 +6,8 @@ const AREA = YTAI_LANG === 'en'
   : { main: '메인', player: '플레이어', sidebar: '사이드바', header: '헤더', right: '우측' };
 
 const MIC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+// 말로 찾아 틀기: 검색 화면으로 넘어가며 남기는 표시 (initHelper가 바로 읽으므로 위에 둔다)
+const PLAY_KEY = 'ytai-play-query';
 
 // Prevent double injection
 if (window.__ytAiHelperLoaded) {
@@ -24,6 +26,7 @@ function initHelper() {
   watchMiniplayer();
   watchFullscreen();
   watchMediaLabels();
+  resumeVoicePlay();
 }
 
 // ─── 유튜브가 붙인 표시를 크게 알려 주기 ─────────────────────────────────────
@@ -663,6 +666,8 @@ const LOCAL_COMMANDS = {
     // "잘 안 들려서 자막 켜 줘"는 자막이므로 소리 키우기보다 먼저 본다
     [/^자막(을|를)?(켜|틀어|보여)?$|^(글자|글씨)$|^.{0,15}자막(을|를)?켜$|^.{0,15}(자막|글자|글씨|글)(이|가|을|를)?(나오게|띄워|띄와|보이게)(봐)?$|글로보(여|이도)$|^한글(로|자막)(나오게)?$/, () => turnOnCaptions()],
     [/^.{0,10}(소리|볼륨|음량|말소리만?)(를|을)?더?(크게|키워|키아|높여|올려)$|안들(려|린다|링께|리네|리는데)/, () => volumeUp()],
+    // 말로 찾아 튼 뒤 "이거 말고 다른 거" → 같은 검색어의 다음 영상
+    [/^(이거|그거)?(말고)?(다른|딴)(거|걸|것|영상|노래|곡)?(로|으로)?(틀어|보여|들려)?(봐)?$|^이거말고$/, () => playNext()],
   ],
   en: [
     [/^(make )?(the )?(text )?(bigger|larger)$|^zoom in$|^(increase|enlarge) (the )?text( size)?$/, () => stepViewSize(1)],
@@ -681,6 +686,7 @@ const LOCAL_COMMANDS = {
     [/^(normal|regular) speed$/,                                                                   () => setSpeed(1)],
     [/^(turn on |show )?(the )?(captions|subtitles)( on)?$/,                                       () => turnOnCaptions()],
     [/^(louder|volume up|turn (it )?up|i can'?t hear( it)?)$/,                                     () => volumeUp()],
+    [/^(play )?(something else|another( one)?|a different one)$/,                                   () => playNext()],
   ],
 };
 
@@ -701,13 +707,219 @@ function normalizeCommand(text) {
 }
 
 function handleLocalCommand(text) {
+  // 영상 목록 창이 떠 있으면 "2번"·"다른 거" 같은 고르기 말을 먼저 본다
+  if (handlePickCommand(text)) return true;
   const n = normalizeCommand(text);
-  if (!n || n.length > 20) return false;
-  for (const [re, run] of LOCAL_COMMANDS[YTAI_LANG]) {
-    // 규칙이 false를 돌려주면 처리하지 않은 것 → 다음 규칙이나 AI로
-    if (re.test(n) && run() !== false) return true;
+  if (!n) return false;
+  if (n.length <= 20) {
+    for (const [re, run] of LOCAL_COMMANDS[YTAI_LANG]) {
+      // 규칙이 false를 돌려주면 처리하지 않은 것 → 다음 규칙이나 AI로
+      if (re.test(n) && run() !== false) return true;
+    }
   }
-  return false;
+  // 위 명령에 하나도 안 맞을 때만 "임영웅 노래 틀어 줘" 같은 찾아 틀기로 본다
+  return playFromCommand(text);
+}
+
+// ─── 말로 찾아서 틀기 ───────────────────────────────────────────────────────
+// "임영웅 노래 틀어 줘" → 검색 화면으로 가서 위의 영상 3개(광고·쇼츠·생방송 빼고)를 큰 창에 보여 주고,
+// 누르거나 "2번"·"별빛 같은 거"·"맨 위에 거"라고 하면 바로 튼다. "다른 거"는 다음 3개.
+// 화면 버튼이나 질문("구독 버튼 어디 있는지 보여 줘")은 검색어로 쓰지 않고 AI 안내로 보낸다.
+const PLAY_RE = {
+  ko: /^(.+?)\s*(좀\s*)?(틀어|들려|보여|듣고\s*싶|보고\s*싶)/,
+  en: /^(?:play|put on)\s+(.+)$/i,
+};
+const PLAY_NOT_QUERY = /어디|어떻게|어떡|뭐|왜|방법|버튼|설정|자막|소리|볼륨|화면|글씨|글자|광고|다음|이전|다시|처음|맨앞|구독|보관함|기록|이거|이것|그거|이\s*영상|속도|천천히|빠르게|느리게|button|setting|caption|next|again/i;
+const PLAY_OTHER = /\s*(다른|딴|another|other)\s*/gi;
+const PICK_SIZE = 3;
+
+function playFromCommand(text) {
+  const m = text.trim().match(PLAY_RE[YTAI_LANG]);
+  const query = m?.[1].replace(/[.,!?~]/g, '').replace(PLAY_OTHER, ' ').trim();
+  if (!query || query.length < 2 || PLAY_NOT_QUERY.test(query)) return false;
+  startVoicePlay(query);
+  return true;
+}
+
+// 영상을 보다가 "다른 거" → 방금 찾은 검색어의 목록을 다시. 찾은 적이 없으면 AI 안내로
+function playNext() {
+  const last = lastVoicePlay();
+  if (!last) return false;
+  startVoicePlay(last.query, last.page);
+}
+
+function lastVoicePlay() {
+  try { return JSON.parse(sessionStorage.getItem(PLAY_KEY)); } catch { return null; }
+}
+
+function startVoicePlay(query, page = 0) {
+  hidePanel();
+  showToast(t('playSearchToast').replace('{q}', query));
+  // 검색 화면으로 새로 이동하면 이 스크립트도 새로 뜨므로 무엇을 찾았는지 적어 둔다.
+  // 고른 뒤에도 남겨 "다른 거"에 쓴다 (이 탭에서만 유지, 탭을 닫으면 사라짐).
+  sessionStorage.setItem(PLAY_KEY, JSON.stringify({ query, page, at: Date.now(), pending: true }));
+  setTimeout(() => {
+    location.href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
+  }, 1200);
+}
+
+// 검색 화면에서 이어서: 결과가 뜨면 목록 창 (10초 안에 안 나오면 알림)
+function resumeVoicePlay() {
+  const saved = lastVoicePlay();
+  if (!saved?.pending) return;
+  sessionStorage.setItem(PLAY_KEY, JSON.stringify({ ...saved, pending: false }));
+  if (Date.now() - saved.at > 20000 || location.pathname !== '/results') return;
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (searchResults().length) {
+      clearInterval(timer);
+      showPicker(saved.query, saved.page);
+    } else if (Date.now() - started > 10000) {
+      clearInterval(timer);
+      showToast(t('playNotFoundToast').replace('{q}', saved.query));
+    }
+  }, 300);
+}
+
+// 검색 결과 중 틀 만한 영상: 광고(다른 요소라 안 잡힘)·쇼츠·생방송 제외
+function searchResults() {
+  return [...document.querySelectorAll('ytd-video-renderer')].map(r => {
+    const a = r.querySelector('a#video-title');
+    const id = a && new URL(a.href, location.href).searchParams.get('v');
+    if (!id || !a.href.includes('/watch?') ||
+        r.querySelector('[class*="BadgeShapeLive"], .badge-style-type-live-now-alternate, [overlay-style="LIVE"]')) return null;
+    return {
+      link: a,
+      id,
+      title: a.textContent.trim(),
+      time: r.querySelector('ytd-thumbnail-overlay-time-status-renderer')?.textContent.trim().split(/\s+/)[0] || '',
+      channel: r.querySelector('ytd-channel-name #text, ytd-channel-name a')?.textContent.trim() || '',
+    };
+  }).filter(Boolean);
+}
+
+let _picker = null;  // { query, page, items }
+
+function showPicker(query, page) {
+  const all = searchResults();
+  if (page * PICK_SIZE >= all.length) page = 0;  // 더 없으면 처음 3개로
+  const items = all.slice(page * PICK_SIZE, page * PICK_SIZE + PICK_SIZE);
+  _picker = { query, page, items };
+  const saved = lastVoicePlay();
+  if (saved) sessionStorage.setItem(PLAY_KEY, JSON.stringify({ ...saved, page }));
+
+  document.getElementById('ytai-picker')?.remove();
+  const box = document.createElement('div');
+  box.id = 'ytai-picker';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-labelledby', 'ytai-picker-title');
+  box.innerHTML = `
+    <div class="ytai-picker-card">
+      <h2 id="ytai-picker-title">${escapeHtml(t('pickTitle').replace('{q}', query))}</h2>
+      <div class="ytai-picker-list">
+        ${items.map((v, i) => `
+          <button type="button" class="ytai-pick" data-i="${i}">
+            <span class="ytai-pick-num" aria-hidden="true">${i + 1}</span>
+            <img src="https://i.ytimg.com/vi/${encodeURIComponent(v.id)}/mqdefault.jpg" alt="">
+            <span class="ytai-pick-text">
+              <span class="ytai-pick-title">${escapeHtml(v.title)}</span>
+              <span class="ytai-pick-meta">${escapeHtml([v.time, v.channel].filter(Boolean).join(' · '))}</span>
+            </span>
+          </button>`).join('')}
+      </div>
+      <p class="ytai-picker-status" id="ytai-picker-status" aria-live="polite"></p>
+      <div class="ytai-picker-actions">
+        <button type="button" class="ytai-picker-btn" data-act="more">${t('pickMore')}</button>
+        <button type="button" class="ytai-picker-btn" data-act="mic">${MIC_ICON}<span>${t('pickVoice')}</span></button>
+        <button type="button" class="ytai-picker-btn" data-act="close">${t('pickClose')}</button>
+      </div>
+    </div>`;
+  box.addEventListener('click', (e) => {
+    const pick = e.target.closest('.ytai-pick');
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (pick) playPicked(Number(pick.dataset.i));
+    else if (act === 'more') showPicker(_picker.query, _picker.page + 1);
+    else if (act === 'mic') listenForPick();
+    else if (act === 'close' || e.target === box) closePicker();
+  });
+  box.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePicker(); });
+  document.body.appendChild(box);
+  box.querySelector('.ytai-pick')?.focus();
+
+  // 목록을 읽어 준 뒤(읽기가 꺼져 있으면 바로) 마이크를 켜 대답을 듣는다
+  const intro = t('pickSpeak').replace('{list}', items.map((v, i) => t('pickItem').replace('{n}', i + 1).replace('{title}', v.title)).join('. '));
+  announce(intro);
+  speak(intro).then(() => { if (_picker?.items === items) listenForPick(); });
+}
+
+function closePicker() {
+  _pickRec?.abort();
+  document.getElementById('ytai-picker')?.remove();
+  _picker = null;
+}
+
+function playPicked(i) {
+  const v = _picker?.items[i];
+  if (!v) return;
+  closePicker();
+  showToast(t('playStartToast').replace('{title}', v.title), 7000);
+  v.link.click();
+}
+
+// "2번"·"두 번째"·"맨 위에 거"·"별빛 같은 거"·"다른 거"·"됐어" → 처리했으면 true
+const PICK_NUMS = { 첫: 1, 한: 1, 하나: 1, 일: 1, 두: 2, 둘: 2, 이: 2, 세: 3, 셋: 3, 삼: 3, 네: 4, 넷: 4, 사: 4, 다섯: 5, 오: 5, 여섯: 6, 육: 6 };
+const PICK_FILLER = /^(거|걸|것|그거|이거|저거|그|저|이|영상|노래|틀어|틀어줘|보여줘|들려줘|줘|주세요|좀|번|it|the|one|play)$/i;
+
+function handlePickCommand(text) {
+  if (!_picker) return false;
+  const n = text.replace(/[\s.,!?~]/g, '');
+  const items = _picker.items;
+  if (/^(됐어|됐다|취소|닫아|그만|안볼래|안봐|cancel|close|never ?mind)/i.test(n)) { closePicker(); return true; }
+  if (/다른|딴|더보여|다음거|another|other|more/i.test(n)) { showPicker(_picker.query, _picker.page + 1); return true; }
+  let i = -1;
+  if (/맨위|제일위|첫번째|첫째|위에|top|first/i.test(n)) i = 0;
+  else if (/가운데|중간|middle/i.test(n)) i = 1;
+  else if (/마지막|맨아래|맨밑|아래|밑에|last|bottom/i.test(n)) i = items.length - 1;
+  else {
+    const m = n.match(/(\d+|다섯|여섯|하나|첫|한|두|둘|세|셋|네|넷|일|이|삼|사|오|육)(번째|번|째)/) || n.match(/^(\d+)$/);
+    const num = m && (Number(m[1]) || PICK_NUMS[m[1]]);
+    // 화면에는 1~3으로 보이지만 "4번"처럼 전체 순서로 말해도 받는다
+    if (num) i = num <= items.length ? num - 1 : num - 1 - _picker.page * PICK_SIZE;
+  }
+  if (i < 0 || i >= items.length) {
+    // 제목 일부: 말에 든 두 글자 이상 낱말이 제목에 가장 많이 든 영상 (하나로 정해질 때만)
+    const words = text.split(/[\s.,!?~]+/).map(w => w.replace(/(거|걸|것|로|으로|를|을|이|가)$/, ''))
+      .filter(w => w.length >= 2 && !PICK_FILLER.test(w));
+    const scores = items.map(v => words.filter(w => v.title.replace(/\s/g, '').includes(w)).length);
+    const best = Math.max(0, ...scores);
+    if (best > 0 && scores.filter(s => s === best).length === 1) i = scores.indexOf(best);
+  }
+  if (i < 0 || i >= items.length) return false;
+  playPicked(i);
+  return true;
+}
+
+// 목록 창에서 한 번 듣기. 못 알아들으면 다시 말해 달라고 하고 버튼으로도 고를 수 있게 둔다
+let _pickRec = null;
+function listenForPick() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const status = document.getElementById('ytai-picker-status');
+  if (!SR || !status || _pickRec) return;
+  const rec = _pickRec = new SR();
+  rec.lang = YTAI_LANG === 'ko' ? 'ko-KR' : 'en-US';
+  rec.interimResults = false;
+  let heard = '';
+  status.textContent = t('pickListening');
+  rec.onresult = (e) => { heard = e.results[0][0].transcript; status.textContent = heard; };
+  rec.onerror = () => {};
+  rec.onend = () => {
+    _pickRec = null;
+    if (!_picker) return;
+    if (heard && handlePickCommand(heard)) return;
+    status.textContent = t(heard ? 'pickRetry' : 'pickNoVoice');
+  };
+  try { rec.start(); } catch { _pickRec = null; status.textContent = t('pickNoVoice'); }
 }
 
 function setTtsFromCommand(on) {
