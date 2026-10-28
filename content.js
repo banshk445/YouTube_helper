@@ -24,6 +24,7 @@ function initHelper() {
   loadViewSettings();
   listenForShortcuts();
   watchMiniplayer();
+  watchFullscreen();
   watchMediaLabels();
   resumeVoicePlay();
 }
@@ -68,6 +69,18 @@ function watchMediaLabels() {
 // ─── 미니플레이어 피하기 ─────────────────────────────────────────────────────
 // 유튜브 미니플레이어도 화면 오른쪽 아래에 뜬다. 떠 있으면 버튼 묶음(가-/가+/도움받기)과
 // 패널·알림을 그 위로 올린다. 위치는 content.css의 --ytai-dock-bottom 변수.
+
+// 유튜브 전체화면에서는 아래 버튼 묶음이 영상을 가리므로, 유튜브 조작바가 사라질 때 같이 숨기고
+// 마우스를 움직여 조작바가 나타나면 같이 보인다. 도움받기 창이 열려 있거나 버튼에 포커스가 있으면 둔다.
+function watchFullscreen() {
+  setInterval(() => {
+    const hide = !!document.fullscreenElement &&
+      !!document.querySelector('#movie_player')?.classList.contains('ytp-autohide') &&
+      !document.getElementById('ytai-panel')?.classList.contains('ytai-panel-visible') &&
+      !document.getElementById('ytai-dock')?.contains(document.activeElement);
+    document.documentElement.toggleAttribute('data-ytai-fs-hide', hide);
+  }, 250);
+}
 
 function watchMiniplayer() {
   const update = () => {

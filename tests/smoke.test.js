@@ -316,5 +316,16 @@ const watch = `<html><body style="margin:0;height:4000px">
   await openPicker();
   await page.evaluate(() => handleLocalCommand('됐어'));
   check('"됐어" closes picker', await page.locator('#ytai-picker').count() === 0);
+  // 15. 전체화면: 유튜브 조작바가 숨으면 아래 버튼 묶음도 숨고, 조작바가 보이면 다시 보임
+  html = `<html><body><div id="movie_player" class="html5-video-player ytp-autohide"></div></body></html>`;
+  await load('https://www.youtube.com/watch?v=x');
+  const dockHidden = async () => { await page.waitForTimeout(400); return page.evaluate(() => getComputedStyle(document.getElementById('ytai-dock')).opacity === '0'); };
+  check('dock visible outside fullscreen', !(await dockHidden()));
+  await page.evaluate(() => Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => document.body }));
+  check('dock hides with fullscreen controls', await dockHidden());
+  await page.evaluate(() => document.getElementById('movie_player').classList.remove('ytp-autohide'));
+  check('dock shows when controls show', !(await dockHidden()));
+  await page.evaluate(() => { document.getElementById('movie_player').classList.add('ytp-autohide'); togglePanel(); });
+  check('dock stays while panel open', !(await dockHidden()));
   await browser.close();
 })();
