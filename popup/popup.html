@@ -21,18 +21,7 @@
       margin-bottom: 18px;
     }
 
-    .header-icon {
-      width: 44px;
-      height: 44px;
-      background: linear-gradient(135deg, #4F6EF7, #3a55d4);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .header-icon svg { width: 26px; height: 26px; }
+    .header-icon { width: 44px; height: 44px; flex-shrink: 0; }
 
     .header-text h1 { font-size: 15px; font-weight: 800; color: #222; }
     .header-text p  { font-size: 12px; color: #5f6470; margin-top: 2px; }
@@ -73,7 +62,7 @@
     .steps-title {
       font-size: 11px;
       font-weight: 700;
-      color: #3346C9;
+      color: #111;
       margin-bottom: 12px;
       letter-spacing: 0.5px;
     }
@@ -90,8 +79,8 @@
     .step-num {
       width: 22px;
       height: 22px;
-      background: #3D5CE0;
-      color: white;
+      background: #111;
+      color: #FFD400;
       border-radius: 50%;
       font-size: 11px;
       font-weight: 700;
@@ -108,7 +97,8 @@
       color: #444;
     }
 
-    .step-text strong { color: #3346C9; }
+    /* 형광펜처럼 노란 밑줄로 강조 (로고 색과 통일) */
+    .step-text strong { color: #111; background: linear-gradient(transparent 55%, #FFE566 55%); }
 
     .features {
       display: grid;
@@ -138,13 +128,11 @@
 </head>
 <body>
   <div class="header">
-    <div class="header-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"
-           stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="11" cy="11" r="7"/>
-        <line x1="16.5" y1="16.5" x2="22" y2="22"/>
-      </svg>
-    </div>
+    <!-- tools/logo/logo.svg와 같은 로고 -->
+    <svg class="header-icon" viewBox="70 146 884 788" aria-hidden="true">
+      <path fill="#FFD400" stroke="#111111" stroke-width="48" stroke-linejoin="round" d="M212 178H812C876 178 922 224 922 288V646C922 710 876 756 812 756H497L282 902L318 756H212C148 756 102 710 102 646V288C102 224 148 178 212 178Z"/>
+      <path d="M426 320V618L676 469L426 320Z" fill="#111111"/>
+    </svg>
     <div class="header-text">
       <h1 id="header-title">YouTube AI Helper</h1>
       <p id="header-subtitle">AI points at the button for you</p>
