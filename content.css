@@ -781,6 +781,7 @@ html[data-ytai-color="contrast"] {
   #ytai-panel.ytai-panel-visible,
   #ytai-instruction,
   #ytai-toast,
+  #ytai-seek,
   .ytai-voice-btn.ytai-recording,
   .ytai-arrow {
     animation: none;
@@ -796,3 +797,48 @@ html[data-ytai-color="contrast"] {
   #ytai-btn:hover,
   .ytai-quick-btn:hover { transform: none; }
 }
+
+/* ─── 건너뛰기 시간 막대 ──────────────────────────────────────────────────── */
+
+#ytai-seek {
+  position: fixed;
+  bottom: calc(var(--ytai-dock-bottom) + 48px * var(--ytai-scale) + 24px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483645;
+  background: #1a1a1a;
+  color: #fff;
+  padding: calc(14px * var(--ytai-scale)) calc(26px * var(--ytai-scale));
+  border-radius: 16px;
+  font-family: var(--ytai-font);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  animation: ytai-slide-up 0.25s ease;
+  width: min(90vw, calc(420px * var(--ytai-scale)));
+  box-sizing: border-box;
+  text-align: center;
+}
+.ytai-seek-label { font-size: calc(15px * var(--ytai-scale)); font-weight: 600; }
+.ytai-seek-times {
+  font-size: calc(26px * var(--ytai-scale));
+  margin: calc(6px * var(--ytai-scale)) 0 calc(12px * var(--ytai-scale));
+  font-variant-numeric: tabular-nums;
+}
+.ytai-seek-arrow { margin: 0 calc(10px * var(--ytai-scale)); opacity: 0.7; }
+.ytai-seek-track {
+  position: relative;
+  height: calc(8px * var(--ytai-scale));
+  background: rgba(255,255,255,0.3);
+  border-radius: 8px;
+}
+.ytai-seek-fill { height: 100%; background: #FFD400; border-radius: 8px; transition: width 0.4s ease; }
+.ytai-seek-dot {
+  position: absolute;
+  top: 50%;
+  width: calc(16px * var(--ytai-scale));
+  height: calc(16px * var(--ytai-scale));
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+}
+.ytai-seek-old { background: rgba(255,255,255,0.5); }
+.ytai-seek-new { background: #FFD400; border: 3px solid #fff; }

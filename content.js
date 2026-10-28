@@ -1178,6 +1178,33 @@ function goShorts(dir) {
   return true;
 }
 
+// 건너뛰기 결과를 시간 막대로 보여준다: 흐린 점 = 이전 위치, 진한 점 = 지금 위치
+function fmtTime(sec) {
+  sec = Math.floor(sec || 0);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+}
+
+function showSeek(label, before, after, duration) {
+  document.getElementById('ytai-seek')?.remove();
+  const pct = (x) => duration > 0 && isFinite(duration) ? Math.min(100, Math.max(0, x / duration * 100)) : 0;
+  const box = document.createElement('div');
+  box.id = 'ytai-seek';
+  box.innerHTML = `
+    <div class="ytai-seek-label">${label}</div>
+    <div class="ytai-seek-times"><span>${fmtTime(before)}</span><span class="ytai-seek-arrow">→</span><strong>${fmtTime(after)}</strong></div>
+    <div class="ytai-seek-track">
+      <div class="ytai-seek-fill" style="width:${pct(after)}%"></div>
+      <div class="ytai-seek-dot ytai-seek-old" style="left:${pct(before)}%"></div>
+      <div class="ytai-seek-dot ytai-seek-new" style="left:${pct(after)}%"></div>
+    </div>`;
+  document.body.appendChild(box);
+  const msg = `${label}. ${fmtTime(before)} → ${fmtTime(after)}`;
+  announce(msg);
+  speak(msg);
+  setTimeout(() => box.remove(), 4000);
+}
+
 function quickAction(elementType, label) {
   hidePanel();
 
@@ -1185,10 +1212,11 @@ function quickAction(elementType, label) {
   if (elementType === 'replay' || elementType === 'seek_back' || elementType === 'seek_fwd') {
     const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
     if (!v) { showToast(t('notFoundToast').replace('{label}', label)); return; }
+    const before = v.currentTime;
     if (elementType === 'replay') v.currentTime = 0;
-    else v.currentTime = Math.max(0, Math.min(v.duration || Infinity, v.currentTime + (elementType === 'seek_fwd' ? 10 : -10)));
+    else v.currentTime = Math.max(0, Math.min(v.duration || Infinity, before + (elementType === 'seek_fwd' ? 10 : -10)));
     if (elementType === 'replay') v.play();
-    showToast(label);
+    showSeek(label, before, v.currentTime, v.duration);
     return;
   }
 
