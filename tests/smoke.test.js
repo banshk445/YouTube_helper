@@ -265,7 +265,7 @@ const watch = `<html><body style="margin:0;height:4000px">
         : name === 'quick' ? { seek_back: 'back', seek_fwd: 'fwd', replay: 'replay' }[a[0]] : name;
     };
     Object.assign(window, {
-      quickAction: rec('quick'), setSpeed: rec('speed'), turnOnCaptions: rec('cc'), volumeUp: rec('vol'), startVoicePlay: rec('play'),
+      quickAction: rec('quick'), setSpeed: rec('speed'), turnOnCaptions: rec('cc'), volumeUp: rec('vol'), startVoicePlay: rec('play'), playNext: rec('next'),
       stepViewSize: rec('size'), captionFromCommand: rec('ccsize'), setColorFromCommand: rec('color'), setTtsFromCommand: rec('tts'),
       currentVideo: () => ({ playbackRate: window.__rate }),
     });
@@ -281,18 +281,40 @@ const watch = `<html><body style="margin:0;height:4000px">
   const plainNormal = await page.evaluate(() => { window.__did = 'AI'; window.__rate = 1; handleLocalCommand('원래대로'); return window.__did; });
   check('"원래대로" at normal speed goes to AI', plainNormal === 'AI');
 
-  // 14. 말로 찾아 틀기: 검색어를 뽑고, 검색 화면에서 광고·쇼츠를 건너뛴 첫 영상을 누름
+  // 14. 말로 찾아 틀기: 검색어 뽑기 → 검색 화면에서 광고·쇼츠·생방송 뺀 3개 목록 → 말이나 번호로 고르기
   check('play query extracted', await page.evaluate(() => {
     let q; window.startVoicePlay = x => { q = x; }; playFromCommand('임영웅 노래 좀 틀어 줘요'); return q;
   }) === '임영웅 노래');
+  const vid = (id, title, extra = '') => `<ytd-video-renderer><a id="video-title" href="/watch?v=${id}" onclick="window.__clicked='${id}';return false">${title}</a>${extra}<ytd-channel-name><a>채널${id}</a></ytd-channel-name></ytd-video-renderer>`;
   html = `<html><body><ytd-ad-slot-renderer><a id="video-title" href="/watch?v=ad">광고</a></ytd-ad-slot-renderer>
     <ytd-video-renderer><a id="video-title" href="/shorts/s1">쇼츠</a></ytd-video-renderer>
-    <ytd-video-renderer><a id="video-title" href="/watch?v=good" onclick="window.__clicked=this.href;return false">임영웅 - 사랑은 늘 도망가</a></ytd-video-renderer></body></html>`;
-  await page.goto('https://www.youtube.com/results?search_query=x');
-  await page.evaluate(() => sessionStorage.setItem('ytai-play-query', JSON.stringify({ query: '임영웅', at: Date.now() })));
-  await load('https://www.youtube.com/results?search_query=x');
-  await page.waitForTimeout(700);
-  check('voice play clicks first real video', (await page.evaluate(() => window.__clicked || '')).endsWith('/watch?v=good'));
-  check('voice play flag cleared', await page.evaluate(() => sessionStorage.getItem('ytai-play-query')) === null);
+    ${vid('live', '[LIVE] 생방송', '<div class="ytBadgeShapeLive">라이브</div>')}
+    ${vid('a', '임영웅 30곡 모음', '<ytd-thumbnail-overlay-time-status-renderer>1:02:03</ytd-thumbnail-overlay-time-status-renderer>')}
+    ${vid('b', '별빛 같은 나의 사랑아')}${vid('c', '거리에서 열창')}${vid('d', '미스터트롯 무대 모음')}</body></html>`;
+  const openPicker = async (page = 0) => {
+    await page_.goto('https://www.youtube.com/results?search_query=x');
+    await page_.evaluate(p => sessionStorage.setItem('ytai-play-query', JSON.stringify({ query: '임영웅', page: p, at: Date.now(), pending: true })), page);
+    await load('https://www.youtube.com/results?search_query=x');
+    await page_.waitForTimeout(700);
+  };
+  const page_ = page;
+  const titles = () => page.evaluate(() => [...document.querySelectorAll('.ytai-pick-title')].map(e => e.textContent).join('|'));
+  await openPicker();
+  await page.screenshot({ path: path.join(SHOTS, 'picker.png') });
+  check('picker shows 3 videos without ad/shorts/live: ' + await titles(), await titles() === '임영웅 30곡 모음|별빛 같은 나의 사랑아|거리에서 열창');
+  check('picker shows duration and channel', (await page.locator('.ytai-pick-meta').first().textContent()) === '1:02:03 · 채널a');
+  const pickBy = async (text) => { await openPicker(); await page.evaluate(t => { window.__clicked = ''; handleLocalCommand(t); }, text); return page.evaluate(() => window.__clicked); };
+  check('"2번" plays second', await pickBy('2번 틀어 줘') === 'b');
+  check('"두 번째 거" plays second', await pickBy('두 번째 거') === 'b');
+  check('"맨 마지막 거" plays third', await pickBy('맨 마지막 거') === 'c');
+  check('"별빛 같은 거" plays by title', await pickBy('별빛 같은 거 틀어 줘') === 'b');
+  check('picker closes after pick', await page.locator('#ytai-picker').count() === 0);
+  await openPicker();
+  await page.evaluate(() => handleLocalCommand('다른 거 보여 줘'));
+  check('"다른 거" shows next videos: ' + await titles(), await titles() === '미스터트롯 무대 모음');
+  check('"4번" on 2nd page plays it', await page.evaluate(() => { handleLocalCommand('4번'); return window.__clicked; }) === 'd');
+  await openPicker();
+  await page.evaluate(() => handleLocalCommand('됐어'));
+  check('"됐어" closes picker', await page.locator('#ytai-picker').count() === 0);
   await browser.close();
 })();
