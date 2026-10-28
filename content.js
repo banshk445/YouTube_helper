@@ -1161,7 +1161,9 @@ function updateQuickGridForPage() {
 
 // 다음/이전 쇼츠로 넘기기. 1) 유튜브의 위/아래 이동 버튼 2) 없으면 옆 쇼츠로 스크롤
 function goShorts(dir) {
-  const btn = pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS[dir > 0 ? 'next_short' : 'prev_short'])]);
+  // 창이 좁으면 유튜브가 이동 버튼을 숨기지만(크기 0) 눌러도 동작하므로 숨은 버튼도 쓴다
+  const navBtns = [...document.querySelectorAll(ELEMENT_SELECTORS[dir > 0 ? 'next_short' : 'prev_short'])];
+  const btn = pickOnScreen(navBtns) || navBtns[0];
   if (btn) {
     btn.click();
   } else {
@@ -1185,24 +1187,34 @@ function fmtTime(sec) {
   return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
 }
 
+let _seekStart = null, _seekTimer = null;
+
 function showSeek(label, before, after, duration) {
-  document.getElementById('ytai-seek')?.remove();
+  // 연달아 누르면 상자를 새로 만들지 않고 내용만 바꾼다. 출발점은 처음 누른 시점을 유지해
+  // "모두 얼마나 움직였는지"가 한눈에 보이게 한다.
+  let box = document.getElementById('ytai-seek');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'ytai-seek';
+    document.body.appendChild(box);
+    _seekStart = before;
+  }
   const pct = (x) => duration > 0 && isFinite(duration) ? Math.min(100, Math.max(0, x / duration * 100)) : 0;
-  const box = document.createElement('div');
-  box.id = 'ytai-seek';
   box.innerHTML = `
     <div class="ytai-seek-label">${label}</div>
-    <div class="ytai-seek-times"><span>${fmtTime(before)}</span><span class="ytai-seek-arrow">→</span><strong>${fmtTime(after)}</strong></div>
+    <div class="ytai-seek-times"><span>${fmtTime(_seekStart)}</span><span class="ytai-seek-arrow">→</span><strong>${fmtTime(after)}</strong></div>
     <div class="ytai-seek-track">
       <div class="ytai-seek-fill" style="width:${pct(after)}%"></div>
-      <div class="ytai-seek-dot ytai-seek-old" style="left:${pct(before)}%"></div>
+      <div class="ytai-seek-dot ytai-seek-old" style="left:${pct(_seekStart)}%"></div>
       <div class="ytai-seek-dot ytai-seek-new" style="left:${pct(after)}%"></div>
-    </div>`;
-  document.body.appendChild(box);
-  const msg = `${label}. ${fmtTime(before)} → ${fmtTime(after)}`;
+    </div>
+    <div class="ytai-seek-hint">${t('seekKeyHint')}</div>`;
+  // 소리 안내는 speak()가 이전 발화를 끊으므로 연타해도 마지막 것만 들린다
+  const msg = `${label}. ${fmtTime(after)}`;
   announce(msg);
   speak(msg);
-  setTimeout(() => box.remove(), 4000);
+  clearTimeout(_seekTimer);
+  _seekTimer = setTimeout(() => box.remove(), 4000);
 }
 
 function quickAction(elementType, label) {
@@ -1210,11 +1222,19 @@ function quickAction(elementType, label) {
 
   // 되감기·건너뛰기는 가리킬 버튼이 없어 영상에 바로 적용한다
   if (elementType === 'replay' || elementType === 'seek_back' || elementType === 'seek_fwd') {
-    const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    // 광고 중에 되감으면 광고를 처음부터 다시 봐야 하므로 건드리지 않는다
+    if (document.querySelector('.html5-video-player.ad-showing')) { showToast(t('seekAdToast')); return; }
+    // 쇼츠는 쇼츠마다 video가 따로 있어서 첫 번째가 아니라 지금 재생 중인 것을 골라야 한다
+    const v = pickOnScreen([...document.querySelectorAll('video')]);
     if (!v) { showToast(t('notFoundToast').replace('{label}', label)); return; }
     const before = v.currentTime;
     if (elementType === 'replay') v.currentTime = 0;
-    else v.currentTime = Math.max(0, Math.min(v.duration || Infinity, before + (elementType === 'seek_fwd' ? 10 : -10)));
+    else {
+      // 끝까지 건너뛰면 영상이 끝나 자동재생이 다음 영상을 트므로 끝 근처에서는 막는다
+      const target = before + (elementType === 'seek_fwd' ? 10 : -10);
+      if (elementType === 'seek_fwd' && v.duration && target >= v.duration - 1) { showToast(t('seekEndToast')); return; }
+      v.currentTime = Math.max(0, target);
+    }
     if (elementType === 'replay') v.play();
     showSeek(label, before, v.currentTime, v.duration);
     return;

@@ -840,5 +840,11 @@ html[data-ytai-color="contrast"] {
   transform: translate(-50%, -50%);
   box-sizing: border-box;
 }
-.ytai-seek-old { background: rgba(255,255,255,0.5); }
+/* 이전 위치는 속이 빈 원: 흐린 점보다 저시력에서 잘 보인다 */
+.ytai-seek-old { background: #1a1a1a; border: 3px solid #fff; }
+.ytai-seek-hint { margin-top: calc(10px * var(--ytai-scale)); font-size: calc(13px * var(--ytai-scale)); color: #ccc; }
+html[data-ytai-color="contrast"] #ytai-seek { border: 3px solid #FFD400; }
+html[data-ytai-color="contrast"] .ytai-seek-track { background: #fff; }
+html[data-ytai-color="contrast"] .ytai-seek-old { border-color: #FFD400; background: #000; }
+html[data-ytai-color="contrast"] .ytai-seek-hint { color: #fff; }
 .ytai-seek-new { background: #FFD400; border: 3px solid #fff; }
