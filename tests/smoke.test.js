@@ -242,5 +242,30 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.waitForTimeout(300);
   check('xlarge panel fits without inner scroll? ' + await page.evaluate(() => { const p = document.getElementById('ytai-panel'); return p.scrollHeight + '/' + p.clientHeight; }), true);
   await page.screenshot({ path: path.join(SHOTS, 'panel-xlarge.png') });
+
+  // 13. ChatKHU로 모은 어르신 표현: voice-phrases.tsv의 모든 줄이 기대한 동작으로 가는지
+  html = watch;
+  await load('https://www.youtube.com/watch?v=x');
+  await page.evaluate(() => {
+    const rec = name => (...a) => {
+      window.__did = name === 'speed' ? (a[0] === 1 ? 'normal' : 'slow')
+        : name === 'quick' ? { seek_back: 'back', seek_fwd: 'fwd', replay: 'replay' }[a[0]] : name;
+    };
+    Object.assign(window, {
+      quickAction: rec('quick'), setSpeed: rec('speed'), turnOnCaptions: rec('cc'), volumeUp: rec('vol'),
+      stepViewSize: rec('size'), captionFromCommand: rec('ccsize'), setColorFromCommand: rec('color'), setTtsFromCommand: rec('tts'),
+      currentVideo: () => ({ playbackRate: window.__rate }),
+    });
+  });
+  const phrases = fs.readFileSync(path.join(__dirname, 'voice-phrases.tsv'), 'utf8')
+    .split('\n').filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t'));
+  const wrong = await page.evaluate(list => list.map(([want, text]) => {
+    window.__did = 'AI'; window.__rate = 0.75;
+    handleLocalCommand(text);
+    return [want, text, window.__did];
+  }).filter(([want, , got]) => want !== got).map(([want, text, got]) => `${text} (${want}→${got})`), phrases);
+  check(`voice phrases ${phrases.length - wrong.length}/${phrases.length}` + (wrong.length ? ': ' + wrong.join(', ') : ''), wrong.length === 0);
+  const plainNormal = await page.evaluate(() => { window.__did = 'AI'; window.__rate = 1; handleLocalCommand('원래대로'); return window.__did; });
+  check('"원래대로" at normal speed goes to AI', plainNormal === 'AI');
   await browser.close();
 })();

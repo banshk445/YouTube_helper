@@ -395,17 +395,16 @@ function changeCaptionSize(dir) {
   if (!player) return false;
   const ccOn = [...document.querySelectorAll('.ytp-subtitles-button[aria-pressed="true"]')].some(isInViewport);
   if (!ccOn) return false;
-  const plus = dir > 0;
-  player.dispatchEvent(new KeyboardEvent('keydown', {
-    key: plus ? '+' : '-',
-    code: plus ? 'NumpadAdd' : 'NumpadSubtract',
-    keyCode: plus ? 107 : 109,
-    which: plus ? 107 : 109,
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-  }));
+  if (dir > 0) pressPlayerKey('+', 'NumpadAdd', 107);
+  else pressPlayerKey('-', 'NumpadSubtract', 109);
   return true;
+}
+
+// 유튜브 플레이어 단축키를 대신 누른다 (자막 크기 +/-, 음량 ↑)
+function pressPlayerKey(key, code, keyCode) {
+  document.querySelector('#movie_player, .html5-video-player')?.dispatchEvent(new KeyboardEvent('keydown', {
+    key, code, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true,
+  }));
 }
 
 function settingsHtml() {
@@ -597,11 +596,22 @@ const LOCAL_COMMANDS = {
     [/^자막(을|를)?더?(크게|키워)$/,                             () => captionFromCommand(1)],
     [/^자막(을|를)?더?(작게|줄여)$/,                             () => captionFromCommand(-1)],
     [/^보기설정(열어)?$/,                                         () => { openSettings(); return true; }],
+    // 아래는 ChatKHU로 모은 어르신 표현(tests/voice-phrases.tsv)을 바탕으로 넓혔다.
+    // "앞으로/뒤로"는 사람마다 반대 뜻으로 써서 "10초" 없이 단독으로는 받지 않는다.
     [/^(10|십)초(만)?(전|전으로|뒤로|되감아|돌려)(가|돌려|감아)?$|^(되감기|되감아|뒤로감기)$/,      () => quickAction('seek_back', t('quickBack10'))],
+    [/^(조금|쪼매|쪼까|쪼끔)?전으로(돌려|돌리|가)?$|^거기말고(조금)?전(에|으로)$/,               () => quickAction('seek_back', t('quickBack10'))],
+    [/^(?!.*영상)(방금|아까).{0,6}다시(보여|틀어|들려)?$|^못들었(어|다)다시$|^지나간(데|거|부분)다시(틀어|보여)?$|^한번(만)?더(들려|보여|틀어)$/, () => quickAction('seek_back', t('quickBack10'))],
     [/^(10|십)초(만)?(후|후로|앞으로|건너뛰어|넘겨)(가|넘겨)?$|^(건너뛰기|건너뛰어|앞으로감기)$/, () => quickAction('seek_fwd', t('quickFwd10'))],
-    [/^(처음부터|처음으로)(다시)?(봐|틀어|재생|보기|돌려)?$|^다시(틀어|봐|재생)$/,              () => quickAction('replay', t('quickReplay'))],
-    [/^(천천히|느리게|속도(를)?(줄여|느리게))(봐|틀어|재생)?$/,                                  () => setSpeed(0.75)],
-    [/^(원래|보통|정상)속도(로|으로)?(돌려|틀어|바꿔)?$/,                                      () => setSpeed(1)],
+    // 광고·다음 영상을 넘기라는 말은 AI 안내로 보낸다
+    [/^(?!.*(광고|다음|영상)).{0,12}(넘겨|넘기|넘기라|건너뛰어|뛰어넘어)$|^(조금|쪼끔)?더가(봐)?$/, () => quickAction('seek_fwd', t('quickFwd10'))],
+    [/^(다시)?(맨앞|앞에서|맨?(처음|첨|츰|시작|첫머리))(부터|으로)?(다시)?(봐|틀어|재생|보기|돌려|보여|봐야겠다)?$|^(이거|이영상)?다시(틀어|봐|재생)$/, () => quickAction('replay', t('quickReplay'))],
+    [/^.{0,8}(원래|보통|정상)속도(로|으로)?(돌려|틀어|바꿔)?$|^보통빠르기(로)?$|^1배속?(으로|로)?$/, () => setSpeed(1)],
+    // "원래대로"·"보통으로"는 글씨·색일 수도 있어, 영상이 느리게 재생 중일 때만 속도로 본다
+    [/^.{0,10}(원래대로|보통으로|정상으로|제대로틀어)(돌려|돌리라|틀어)?$/,                       () => currentVideo()?.playbackRate < 1 ? setSpeed(1) : false],
+    [/^.{0,15}(천천히|느리게)(봐|틀어|재생|보여)?$|^속도(를)?(줄여|느리게)$|^너무빠르(다|네|노)$|^0?75배(속)?(로|으로)?$/, () => setSpeed(0.75)],
+    // "잘 안 들려서 자막 켜 줘"는 자막이므로 소리 키우기보다 먼저 본다
+    [/^자막(을|를)?(켜|틀어|보여)?$|^(글자|글씨)$|^.{0,15}자막(을|를)?켜$|^.{0,15}(자막|글자|글씨|글)(이|가|을|를)?(나오게|띄워|띄와|보이게)(봐)?$|글로보(여|이도)$|^한글(로|자막)(나오게)?$/, () => turnOnCaptions()],
+    [/^.{0,10}(소리|볼륨|음량|말소리만?)(를|을)?더?(크게|키워|키아|높여|올려)$|안들(려|린다|링께|리네|리는데)/, () => volumeUp()],
   ],
   en: [
     [/^(make )?(the )?(text )?(bigger|larger)$|^zoom in$|^(increase|enlarge) (the )?text( size)?$/, () => stepViewSize(1)],
@@ -618,6 +628,8 @@ const LOCAL_COMMANDS = {
     [/^(start over|replay|watch again|play (it )?from the (start|beginning))$/,                   () => quickAction('replay', t('quickReplay'))],
     [/^(slow down|slower|play slower|slow)$/,                                                      () => setSpeed(0.75)],
     [/^(normal|regular) speed$/,                                                                   () => setSpeed(1)],
+    [/^(turn on |show )?(the )?(captions|subtitles)( on)?$/,                                       () => turnOnCaptions()],
+    [/^(louder|volume up|turn (it )?up|i can'?t hear( it)?)$/,                                     () => volumeUp()],
   ],
 };
 
@@ -627,11 +639,12 @@ function normalizeCommand(text) {
       .replace(/\s+/g, ' ').trim();
   }
   let n = text.replace(/[\s.,!?~]/g, '').replace(/좀/g, '');
-  // 끝말 떼기: "크게해줘요" → "크게", "읽어주세요" → "읽어"
+  // 끝말 떼기: "크게해줘요" → "크게", "읽어주세요" → "읽어", 사투리 "틀어보랑께"·"해줍서"도.
+  // "봐" 하나만은 떼지 않는다 ("다시 봐"가 "다시"가 되면 뜻이 사라짐)
   let prev;
   do {
     prev = n;
-    n = n.replace(/(해주세요|해주실래요|해줄래|해주라|해줘요|해줘|해요|주세요|줄래|줘요|줘|해|요)$/, '');
+    n = n.replace(/(해주세요|해주실래요|해줄래|해주라|해줘요|해줘|해요|주세요|줄래|줘요|줘|보랑께|봐라|봐유|줘유|줍서|부러|해라|해봐|혀|해|요)$/, '');
   } while (n !== prev && n.length > 0);
   return n;
 }
@@ -640,10 +653,8 @@ function handleLocalCommand(text) {
   const n = normalizeCommand(text);
   if (!n || n.length > 20) return false;
   for (const [re, run] of LOCAL_COMMANDS[YTAI_LANG]) {
-    if (re.test(n)) {
-      run();
-      return true;
-    }
+    // 규칙이 false를 돌려주면 처리하지 않은 것 → 다음 규칙이나 AI로
+    if (re.test(n) && run() !== false) return true;
   }
   return false;
 }
@@ -657,6 +668,23 @@ function setTtsFromCommand(on) {
 function setColorFromCommand(color) {
   setView('color', color);
   showToast(t(color === 'contrast' ? 'colorContrastToast' : 'colorDefaultToast'));
+}
+
+// 자막 켜기·소리 키우기는 유튜브 자체 버튼·키를 쓴다 (유튜브 음량 표시가 떠서 변화가 보임)
+function turnOnCaptions() {
+  const btn = pickOnScreen([...document.querySelectorAll('.ytp-subtitles-button')]);
+  if (!btn) return false;  // 자막 버튼이 없으면(쇼츠 등) AI 안내로
+  if (btn.getAttribute('aria-pressed') === 'true') { showToast(t('captionAlreadyOnToast')); return; }
+  btn.click();
+  showToast(t('captionOnToast'));
+}
+
+function volumeUp() {
+  const v = currentVideo();
+  if (!v || !document.querySelector('#movie_player, .html5-video-player')) return false;
+  if (v.muted) document.querySelector('.ytp-mute-button')?.click();
+  for (let i = 0; i < 4; i++) pressPlayerKey('ArrowUp', 'ArrowUp', 38);  // 한 번에 5%씩 → 20%
+  setTimeout(() => showToast(t('volumeUpToast').replace('{n}', Math.round(v.volume * 100))), 200);
 }
 
 function captionFromCommand(dir) {
