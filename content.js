@@ -165,6 +165,18 @@ function createHelperPanel() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3 19,12 5,21"/></svg>
           <span>${t('quickPlay')}</span>
         </button>
+        <button class="ytai-quick-btn" data-type="replay" data-label="${t('quickReplay')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 1,10 7,10"/><path d="M3.5,15a9,9 0 1 0 2.1-9.4L1,10"/></svg>
+          <span>${t('quickReplay')}</span>
+        </button>
+        <button class="ytai-quick-btn" data-type="seek_back" data-label="${t('quickBack10')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11,17 6,12 11,7"/><polyline points="18,17 13,12 18,7"/></svg>
+          <span>${t('quickBack10')}</span>
+        </button>
+        <button class="ytai-quick-btn" data-type="seek_fwd" data-label="${t('quickFwd10')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13,17 18,12 13,7"/><polyline points="6,17 11,12 6,7"/></svg>
+          <span>${t('quickFwd10')}</span>
+        </button>
         <button class="ytai-quick-btn" data-type="volume" data-label="${t('quickVolume')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M19.07,4.93a10,10,0,0,1,0,14.14"/><path d="M15.54,8.46a5,5,0,0,1,0,7.07"/></svg>
           <span>${t('quickVolume')}</span>
@@ -1166,6 +1178,17 @@ function goShorts(dir) {
 
 function quickAction(elementType, label) {
   hidePanel();
+
+  // 되감기·건너뛰기는 가리킬 버튼이 없어 영상에 바로 적용한다
+  if (elementType === 'replay' || elementType === 'seek_back' || elementType === 'seek_fwd') {
+    const v = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    if (!v) { showToast(t('notFoundToast').replace('{label}', label)); return; }
+    if (elementType === 'replay') v.currentTime = 0;
+    else v.currentTime = Math.max(0, Math.min(v.duration || Infinity, v.currentTime + (elementType === 'seek_fwd' ? 10 : -10)));
+    if (elementType === 'replay') v.play();
+    showToast(label);
+    return;
+  }
 
   if (elementType === 'next_short' || elementType === 'prev_short') {
     goShorts(elementType === 'next_short' ? 1 : -1);
