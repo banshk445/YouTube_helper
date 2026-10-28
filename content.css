@@ -60,6 +60,7 @@ html[data-ytai-color="contrast"] {
   z-index: 2147483640;
   display: flex;
   align-items: center;
+  transition: opacity 0.25s;
   gap: calc(8px * var(--ytai-scale));
   font-family: var(--ytai-font);
 }
@@ -848,3 +849,6 @@ html[data-ytai-color="contrast"] .ytai-seek-track { background: #fff; }
 html[data-ytai-color="contrast"] .ytai-seek-old { border-color: #FFD400; background: #000; }
 html[data-ytai-color="contrast"] .ytai-seek-hint { color: #fff; }
 .ytai-seek-new { background: #FFD400; border: 3px solid #fff; }
+
+/* 유튜브 전체화면에서 조작바가 사라지면 버튼 묶음도 같이 숨김 (content.js watchFullscreen) */
+html[data-ytai-fs-hide] #ytai-dock { opacity: 0; pointer-events: none; }
