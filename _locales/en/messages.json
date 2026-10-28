@@ -28,6 +28,8 @@
   "seekAdToast": { "message": "You can use this after the ad ends." },
   "seekEndToast": { "message": "This is the end of the video." },
   "seekKeyHint": { "message": "Keyboard J (back) · L (forward) also move 10s" },
+  "labelAiToast": { "message": "This video is labeled as made or changed with AI. It may not be real." },
+  "labelPaidToast": { "message": "This video includes paid promotion (sponsorship)." },
   "quickVolume":          { "message": "Volume" },
   "quickSubtitles":       { "message": "Subtitles" },
   "quickFullscreen":      { "message": "Fullscreen" },
