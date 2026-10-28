@@ -177,6 +177,10 @@ function createHelperPanel() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13,17 18,12 13,7"/><polyline points="6,17 11,12 6,7"/></svg>
           <span>${t('quickFwd10')}</span>
         </button>
+        <button class="ytai-quick-btn" data-type="speed" data-label="${t('quickSlow')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><polyline points="12,9 12,13 14,15"/><line x1="10" y1="2" x2="14" y2="2"/></svg>
+          <span>${t('quickSlow')}</span>
+        </button>
         <button class="ytai-quick-btn" data-type="volume" data-label="${t('quickVolume')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M19.07,4.93a10,10,0,0,1,0,14.14"/><path d="M15.54,8.46a5,5,0,0,1,0,7.07"/></svg>
           <span>${t('quickVolume')}</span>
@@ -593,6 +597,11 @@ const LOCAL_COMMANDS = {
     [/^자막(을|를)?더?(크게|키워)$/,                             () => captionFromCommand(1)],
     [/^자막(을|를)?더?(작게|줄여)$/,                             () => captionFromCommand(-1)],
     [/^보기설정(열어)?$/,                                         () => { openSettings(); return true; }],
+    [/^(10|십)초(만)?(전|전으로|뒤로|되감아|돌려)(가|돌려|감아)?$|^(되감기|되감아|뒤로감기)$/,      () => quickAction('seek_back', t('quickBack10'))],
+    [/^(10|십)초(만)?(후|후로|앞으로|건너뛰어|넘겨)(가|넘겨)?$|^(건너뛰기|건너뛰어|앞으로감기)$/, () => quickAction('seek_fwd', t('quickFwd10'))],
+    [/^(처음부터|처음으로)(다시)?(봐|틀어|재생|보기|돌려)?$|^다시(틀어|봐|재생)$/,              () => quickAction('replay', t('quickReplay'))],
+    [/^(천천히|느리게|속도(를)?(줄여|느리게))(봐|틀어|재생)?$/,                                  () => setSpeed(0.75)],
+    [/^(원래|보통|정상)속도(로|으로)?(돌려|틀어|바꿔)?$/,                                      () => setSpeed(1)],
   ],
   en: [
     [/^(make )?(the )?(text )?(bigger|larger)$|^zoom in$|^(increase|enlarge) (the )?text( size)?$/, () => stepViewSize(1)],
@@ -604,6 +613,11 @@ const LOCAL_COMMANDS = {
     [/^(make )?(the )?(captions|subtitles) (bigger|larger)$|^(bigger|larger) (captions|subtitles)$/, () => captionFromCommand(1)],
     [/^(make )?(the )?(captions|subtitles) smaller$|^smaller (captions|subtitles)$/,                 () => captionFromCommand(-1)],
     [/^(open )?display settings$/,                                                                 () => { openSettings(); return true; }],
+    [/^(go )?back( 10| ten)?( seconds)?$|^rewind$/,                                                () => quickAction('seek_back', t('quickBack10'))],
+    [/^(go )?forward( 10| ten)?( seconds)?$|^skip( ahead)?$|^fast forward$/,                       () => quickAction('seek_fwd', t('quickFwd10'))],
+    [/^(start over|replay|watch again|play (it )?from the (start|beginning))$/,                   () => quickAction('replay', t('quickReplay'))],
+    [/^(slow down|slower|play slower|slow)$/,                                                      () => setSpeed(0.75)],
+    [/^(normal|regular) speed$/,                                                                   () => setSpeed(1)],
   ],
 };
 
@@ -1217,15 +1231,32 @@ function showSeek(label, before, after, duration) {
   _seekTimer = setTimeout(() => box.remove(), 4000);
 }
 
+// 쇼츠는 쇼츠마다 video가 따로 있어서 첫 번째가 아니라 지금 재생 중인 것을 골라야 한다
+function currentVideo() {
+  return pickOnScreen([...document.querySelectorAll('video')]);
+}
+
+// rate가 null이면 천천히(0.75배) ↔ 원래 속도를 오간다
+function setSpeed(rate) {
+  const v = currentVideo();
+  if (!v) { showToast(t('notFoundToast').replace('{label}', t('quickSlow'))); return; }
+  v.playbackRate = rate ?? (v.playbackRate < 1 ? 1 : 0.75);
+  showToast(t(v.playbackRate < 1 ? 'slowOnToast' : 'slowOffToast'));
+}
+
 function quickAction(elementType, label) {
   hidePanel();
 
   // 되감기·건너뛰기는 가리킬 버튼이 없어 영상에 바로 적용한다
+  if (elementType === 'speed') {
+    setSpeed(null);
+    return;
+  }
+
   if (elementType === 'replay' || elementType === 'seek_back' || elementType === 'seek_fwd') {
     // 광고 중에 되감으면 광고를 처음부터 다시 봐야 하므로 건드리지 않는다
     if (document.querySelector('.html5-video-player.ad-showing')) { showToast(t('seekAdToast')); return; }
-    // 쇼츠는 쇼츠마다 video가 따로 있어서 첫 번째가 아니라 지금 재생 중인 것을 골라야 한다
-    const v = pickOnScreen([...document.querySelectorAll('video')]);
+    const v = currentVideo();
     if (!v) { showToast(t('notFoundToast').replace('{label}', label)); return; }
     const before = v.currentTime;
     if (elementType === 'replay') v.currentTime = 0;
