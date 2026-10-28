@@ -1135,7 +1135,7 @@ function startAutoClickCountdown(elementType, elementText) {
 const QUICK_SLOTS = {
   normal: {
     a: { type: 'fullscreen', label: 'quickFullscreen', icon: '<polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>' },
-    b: { type: 'next_video', label: 'quickNext', icon: '<polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19"/>' },
+    b: null,  // 일반 영상 화면에서는 이 칸을 숨긴다 (쇼츠에서만 다음 쇼츠 버튼)
   },
   shorts: {
     a: { type: 'prev_short', label: 'quickPrevShort', icon: '<polyline points="18,15 12,9 6,15"/>' },
@@ -1151,6 +1151,8 @@ function updateQuickGridForPage() {
   for (const [slot, def] of Object.entries(QUICK_SLOTS[mode])) {
     const btn = grid.querySelector(`[data-slot="${slot}"]`);
     if (!btn) continue;
+    btn.style.display = def ? '' : 'none';
+    if (!def) { btn.dataset.type = ''; continue; }
     btn.dataset.type = def.type;
     btn.dataset.label = t(def.label);
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${def.icon}</svg><span>${t(def.label)}</span>`;
