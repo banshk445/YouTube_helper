@@ -149,6 +149,18 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.screenshot({ path: path.join(SHOTS, 'settings-contrast.png') });
   await page.click('#ytai-settings-back');
   check('back to main', await page.locator('#ytai-panel-body').isVisible());
+  // 위쪽 돌아가기: 기본 화면에선 숨고, 보기 설정에서 맨 아래로 스크롤해도 머리줄 왼쪽에 보임
+  check('top back hidden on main', !(await page.locator('#ytai-header-back').isVisible()));
+  await page.evaluate(() => { setView('size', 'xlarge'); openSettings(); const p = document.getElementById('ytai-panel'); p.scrollTop = p.scrollHeight; });
+  await page.waitForTimeout(200);
+  check('top back stays at top while scrolled', await page.evaluate(() => {
+    const p = document.getElementById('ytai-panel').getBoundingClientRect(), b = document.getElementById('ytai-header-back').getBoundingClientRect();
+    return document.getElementById('ytai-panel').scrollTop > 0 && b.width > 0 && b.top >= p.top && b.top < p.top + 80 && b.left < p.left + 60;
+  }));
+  await page.screenshot({ path: path.join(SHOTS, 'settings-top-back.png') });
+  await page.click('#ytai-header-back');
+  check('top back returns to main', await page.locator('#ytai-panel-body').isVisible());
+  await page.evaluate(() => setView('size', 'normal'));
   // 캡션 꺼져 있으면 안 보냄
   await page.evaluate(() => { document.querySelector('.ytp-subtitles-button').setAttribute('aria-pressed', 'false'); window.__keys = []; });
   await page.click('.ytai-zoom-btn >> nth=1');
