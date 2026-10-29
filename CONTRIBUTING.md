@@ -16,22 +16,15 @@
 
 코드를 고친 뒤에는 `chrome://extensions`에서 이 확장의 새로고침(↻) 버튼을 누르고, **유튜브 탭도 새로고침**해야 반영됩니다.
 
-### AI 질문이 안 될 때 (알려진 문제)
+### 확장 프로그램 ID (AI 질문이 "허용되지 않은 출처"로 거절될 때)
 
-빠른 버튼·보기 설정은 바로 되지만, **"AI에게 물어보기"는 거절될 수 있습니다.**
-AI 요청을 받는 서버(Cloudflare Worker)는 등록된 확장 프로그램 ID에서 온 요청만 받는데,
-압축해제로 설치하면 사람마다 ID가 다르게 나오기 때문입니다.
+AI 요청을 받는 서버(Cloudflare Worker)는 등록된 확장 프로그램 ID에서 온 요청만 받습니다.
+압축해제로 설치하면 원래는 폴더 위치에 따라 사람마다 ID가 달라지므로, `manifest.json`의 `"key"`(공개 키)로
+**모두의 ID를 `cdhkbhkljogbplhcgdbjfjcbgghcmfjl`로 고정**했습니다.
 
-`manifest.json`에 `key` 값을 넣어 모두의 ID를 같게 만들면 해결됩니다 (팀장이 한 번만 하면 됨).
-
-1. `chrome://extensions` → **확장 프로그램 압축** → 이 폴더 선택 → `.crx`와 `.pem` 파일이 생김
-2. 공개 키 뽑기
-   ```sh
-   openssl rsa -in YouTube_helper.pem -pubout -outform DER | openssl base64 -A
-   ```
-3. 나온 문자열을 `manifest.json`에 `"key": "..."`로 추가 → 다시 로드하면 ID가 고정됨
-4. 그 ID를 `worker/wrangler.toml`의 `ALLOWED_ORIGINS`에 `chrome-extension://<ID>`로 추가하고 Worker 재배포
-5. **`.pem` 파일은 절대 저장소에 올리지 말 것** (`.gitignore`에 이미 들어 있음). 팀장만 보관
+- `chrome://extensions`에서 이 확장의 ID가 `cdhkbhkljogbplhcgdbjfjcbgghcmfjl`인지 확인하세요. 다르면 최신 코드를 받고(`git pull`) 확장을 **삭제 후 다시 로드**하세요.
+- 짝이 되는 비밀 키(`.pem`)는 팀장만 보관합니다. **절대 저장소에 올리지 말 것** (`.gitignore`에 이미 들어 있음). 공개 키(`"key"`)는 올려도 안전합니다.
+- 웹스토어에 올릴 때는 `pack.sh`가 `"key"`를 빼고 묶습니다 (스토어가 `key` 있는 manifest를 받지 않음).
 
 ## 2. 작업 순서 (브랜치 → PR)
 
