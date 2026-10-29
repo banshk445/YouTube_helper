@@ -271,7 +271,7 @@ const watch = `<html><body style="margin:0;height:4000px">
     });
   });
   const phrases = fs.readFileSync(path.join(__dirname, 'voice-phrases.tsv'), 'utf8')
-    .split('\n').filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t'));
+    .split(/\r?\n/).filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t'));
   const wrong = await page.evaluate(list => list.map(([want, text]) => {
     window.__did = 'AI'; window.__rate = 0.75;
     handleLocalCommand(text);
