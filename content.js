@@ -41,11 +41,22 @@ const MEDIA_LABELS = [
   { re: /AI|altered|synthetic/i,   msg: 'labelAiToast' },
 ];
 
+// 확장을 다시 불러오거나 업데이트하면, 이미 열려 있던 탭의 이 스크립트는 크롬과 끊긴다.
+// 그 뒤 chrome.*를 부르면 "Extension context invalidated" 오류가 나고 버튼도 동작하지 않으므로,
+// 끊겼으면 화면의 도우미를 걷어 내고 반복 검사를 멈춘다 (탭을 새로고침하면 새 도우미가 뜬다).
+function extensionGone() {
+  if (chrome.runtime?.id) return false;
+  document.querySelectorAll('[id^="ytai-"]').forEach(el => el.remove());
+  document.documentElement.removeAttribute('data-ytai-fs-hide');
+  return true;
+}
+
 function watchMediaLabels() {
   let navAt = Date.now();
   const shown = new Set();  // "영상ID:문구" — 영상마다 한 번만 알린다
   document.addEventListener('yt-navigate-finish', () => { navAt = Date.now(); });
-  setInterval(() => {
+  const timer = setInterval(() => {
+    if (extensionGone()) return clearInterval(timer);
     const vid = new URL(location.href).searchParams.get('v');
     // 이동 직후엔 설명란이 이전 영상 것일 수 있어 잠깐 기다리고, 광고 중에는 미룬다
     if (!vid || Date.now() - navAt < 1500 || document.querySelector('.html5-video-player.ad-showing')) return;
@@ -73,7 +84,8 @@ function watchMediaLabels() {
 // 유튜브 전체화면에서는 아래 버튼 묶음이 영상을 가리므로, 유튜브 조작바가 사라질 때 같이 숨기고
 // 마우스를 움직여 조작바가 나타나면 같이 보인다. 도움받기 창이 열려 있거나 버튼에 포커스가 있으면 둔다.
 function watchFullscreen() {
-  setInterval(() => {
+  const timer = setInterval(() => {
+    if (extensionGone()) return clearInterval(timer);
     const hide = !!document.fullscreenElement &&
       !!document.querySelector('#movie_player')?.classList.contains('ytp-autohide') &&
       !document.getElementById('ytai-panel')?.classList.contains('ytai-panel-visible') &&
@@ -944,10 +956,15 @@ function turnOnCaptions() {
 
 function volumeUp() {
   const v = currentVideo();
-  if (!v || !document.querySelector('#movie_player, .html5-video-player')) return false;
-  if (v.muted) document.querySelector('.ytp-mute-button')?.click();
-  for (let i = 0; i < 4; i++) pressPlayerKey('ArrowUp', 'ArrowUp', 38);  // 한 번에 5%씩 → 20%
-  setTimeout(() => showToast(t('volumeUpToast').replace('{n}', Math.round(v.volume * 100))), 200);
+  const player = v?.closest('.html5-video-player');
+  if (!player) return false;
+  // 유튜브는 음량 평준화 때문에 100%여도 video.volume이 0.89처럼 낮게 나온다. 유튜브 음량 표시(0~100)를 읽는다
+  const level = () => Number(player.querySelector('.ytp-volume-panel')?.getAttribute('aria-valuenow') ?? Math.round(v.volume * 100));
+  const wasMuted = v.muted, before = v.volume;
+  if (wasMuted) pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS.volume)])?.click();
+  for (let i = 0; i < 4; i++) pressPlayerKey('ArrowUp', 'ArrowUp', 38, { player });  // 한 번에 5%씩 → 20%
+  // 이미 최대면 키가 먹어도 그대로이므로 "키웠어요" 대신 컴퓨터 소리를 키우라고 알린다
+  setTimeout(() => showToast(!wasMuted && v.volume <= before ? t('volumeMaxToast') : t('volumeUpToast').replace('{n}', level())), 200);
 }
 
 function captionFromCommand(dir) {
@@ -1077,9 +1094,10 @@ function getPageSnapshot() {
 // ─── Selectors ───────────────────────────────────────────────────────────────
 
 const ELEMENT_SELECTORS = {
-  play:          '.ytp-play-button',
-  volume:        '.ytp-mute-button',
-  subtitles:     '.ytp-subtitles-button',
+  // 쇼츠는 일반 플레이어(.ytp-*)와 다른 버튼을 쓴다 (#play-pause-button-shape 등)
+  play:          '.ytp-play-button, #play-pause-button-shape button',
+  volume:        '.ytp-mute-button, [class*="VolumeControlsMuteIconButton"]',
+  subtitles:     '.ytp-subtitles-button, #closed-captioning-button-container button',
   settings:      '.ytp-settings-button',
   fullscreen:    '.ytp-fullscreen-button',
   theater:       '.ytp-size-button',
@@ -1666,8 +1684,9 @@ function showStep(index) {
     // 높이를 알아야 위치를 정할 수 있어서 화면에 붙인 뒤에 계산
     if (label) label.style.top = labelTop(initY, label) + 'px';
     startTracking(eType, eText);
-    // 자동 클릭 모드면 카운트다운 후 자동 클릭, 아니면 사용자가 누를 때 다음 단계로
-    if (!autoClickHere && !isLast) {
+    // 자동 클릭 모드면 카운트다운 후 자동 클릭, 아니면 사용자가 누를 때 다음 단계로.
+    // 마지막 단계도 누르면 안내를 닫는다 (눌렀는데 불빛이 남아 있으면 안 된 줄 안다)
+    if (!autoClickHere) {
       attachClickAdvance(eType, eText);
     }
   }

@@ -13,7 +13,7 @@ const stub = `window.__store = { autoClick: !!window.__auto };
 window.chrome = { i18n: { getMessage: k => k, getUILanguage: () => 'ko' },
   storage: { local: { get: (k, cb) => setTimeout(() => cb(Object.fromEntries([].concat(k).map(x => [x, window.__store[x]])))), remove(k) { delete window.__store[k]; }, set(o) { Object.assign(window.__store, o); } },
              onChanged: { addListener() {} } },
-  runtime: { onMessage: { addListener(f) { window.__onMsg = f; } }, sendMessage(m, cb) { if (m.type === 'GET_SHORTCUTS') setTimeout(() => cb({ 'zoom-in': 'Alt+Shift+Up' })); }, lastError: null, connect() { window.__connected = (window.__connected || 0) + 1; return { onMessage:{addListener(){}}, onDisconnect:{addListener(){}}, postMessage(){}, disconnect(){} }; } } };
+  runtime: { id: 'test', onMessage: { addListener(f) { window.__onMsg = f; } }, sendMessage(m, cb) { if (m.type === 'GET_SHORTCUTS') setTimeout(() => cb({ 'zoom-in': 'Alt+Shift+Up' })); }, lastError: null, connect() { window.__connected = (window.__connected || 0) + 1; return { onMessage:{addListener(){}}, onDisconnect:{addListener(){}}, postMessage(){}, disconnect(){} }; } } };
 // 음성 합성 흉내: 말한 문장을 기록하고 1.5초 뒤 끝남
 window.__spoken = [];
 Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel() {}, speak(u) { window.__spoken.push([u.text, Date.now()]); setTimeout(() => u.onend && u.onend(), 1500); } } });
@@ -341,5 +341,38 @@ const watch = `<html><body style="margin:0;height:4000px">
   check('slow again back to normal', JSON.stringify(await speedAfter()) === '[1,"<>"]');
   await page.evaluate(() => { const p = document.getElementById('movie_player'); p.replaceWith(...p.childNodes); });
   check('slow falls back without player', await page.evaluate(() => { setSpeed(0.75); return document.querySelector('video').playbackRate; }) === 0.75);
+
+  // 17. 확장을 다시 불러와 크롬과 끊기면: 오류 없이 도우미를 걷어 내고 반복 검사를 멈춤
+  html = watch;
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await load('https://www.youtube.com/watch?v=x');
+  await page.waitForTimeout(300);
+  check('dock present before reload', await page.locator('#ytai-dock').count() === 1);
+  await page.evaluate(() => {
+    chrome.runtime.id = undefined;
+    chrome.i18n.getMessage = () => { throw new Error('Extension context invalidated.'); };
+  });
+  await page.waitForTimeout(1300);
+  check('stale helper removed after extension reload', await page.locator('[id^="ytai-"]').count() === 0);
+  check('no "context invalidated" errors: ' + errors.join(' / '), errors.length === 0);
+
+  // 18. 점검에서 찾은 것: 쇼츠 재생·소리 버튼, 안내 마지막 단계에서 버튼을 누르면 닫힘, 소리가 최대일 때 안내
+  html = `<html><body style="margin:0"><ytd-reel-video-renderer is-active style="display:block;height:100vh;position:relative">
+    <div class="html5-video-player"><video style="width:300px;height:500px"></video></div>
+    <div id="play-pause-button-shape"><button id="spp" aria-label="일시중지(k)" style="position:absolute;top:20px;left:20px;width:40px;height:40px">▶</button></div>
+    <button id="smute" class="ytdVolumeControlsMuteIconButton" aria-label="음소거(m)" style="position:absolute;top:20px;left:70px;width:40px;height:40px">🔊</button>
+  </ytd-reel-video-renderer></body></html>`;
+  await load('https://www.youtube.com/shorts/abc');
+  check('shorts play button found', await page.evaluate(() => findTargetElement('play', null)?.id) === 'spp');
+  check('shorts mute button found', await page.evaluate(() => findTargetElement('volume', null)?.id) === 'smute');
+  await page.evaluate(() => quickAction('play', '재생'));
+  await page.waitForTimeout(300);
+  await page.click('#spp', { force: true });
+  await page.waitForTimeout(500);
+  check('guide closes after pressing the target', await page.locator('#ytai-overlay').count() === 0);
+  await page.evaluate(() => { document.querySelector('video').volume = 1; volumeUp(); });
+  await page.waitForTimeout(400);
+  check('volume already max says so', (await page.locator('#ytai-toast').textContent()) === 'volumeMaxToast');
   await browser.close();
 })();
