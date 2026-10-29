@@ -356,5 +356,23 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.waitForTimeout(1300);
   check('stale helper removed after extension reload', await page.locator('[id^="ytai-"]').count() === 0);
   check('no "context invalidated" errors: ' + errors.join(' / '), errors.length === 0);
+
+  // 18. 점검에서 찾은 것: 쇼츠 재생·소리 버튼, 안내 마지막 단계에서 버튼을 누르면 닫힘, 소리가 최대일 때 안내
+  html = `<html><body style="margin:0"><ytd-reel-video-renderer is-active style="display:block;height:100vh;position:relative">
+    <div class="html5-video-player"><video style="width:300px;height:500px"></video></div>
+    <div id="play-pause-button-shape"><button id="spp" aria-label="일시중지(k)" style="position:absolute;top:20px;left:20px;width:40px;height:40px">▶</button></div>
+    <button id="smute" class="ytdVolumeControlsMuteIconButton" aria-label="음소거(m)" style="position:absolute;top:20px;left:70px;width:40px;height:40px">🔊</button>
+  </ytd-reel-video-renderer></body></html>`;
+  await load('https://www.youtube.com/shorts/abc');
+  check('shorts play button found', await page.evaluate(() => findTargetElement('play', null)?.id) === 'spp');
+  check('shorts mute button found', await page.evaluate(() => findTargetElement('volume', null)?.id) === 'smute');
+  await page.evaluate(() => quickAction('play', '재생'));
+  await page.waitForTimeout(300);
+  await page.click('#spp', { force: true });
+  await page.waitForTimeout(500);
+  check('guide closes after pressing the target', await page.locator('#ytai-overlay').count() === 0);
+  await page.evaluate(() => { document.querySelector('video').volume = 1; volumeUp(); });
+  await page.waitForTimeout(400);
+  check('volume already max says so', (await page.locator('#ytai-toast').textContent()) === 'volumeMaxToast');
   await browser.close();
 })();

@@ -956,10 +956,15 @@ function turnOnCaptions() {
 
 function volumeUp() {
   const v = currentVideo();
-  if (!v || !document.querySelector('#movie_player, .html5-video-player')) return false;
-  if (v.muted) document.querySelector('.ytp-mute-button')?.click();
-  for (let i = 0; i < 4; i++) pressPlayerKey('ArrowUp', 'ArrowUp', 38);  // 한 번에 5%씩 → 20%
-  setTimeout(() => showToast(t('volumeUpToast').replace('{n}', Math.round(v.volume * 100))), 200);
+  const player = v?.closest('.html5-video-player');
+  if (!player) return false;
+  // 유튜브는 음량 평준화 때문에 100%여도 video.volume이 0.89처럼 낮게 나온다. 유튜브 음량 표시(0~100)를 읽는다
+  const level = () => Number(player.querySelector('.ytp-volume-panel')?.getAttribute('aria-valuenow') ?? Math.round(v.volume * 100));
+  const wasMuted = v.muted, before = v.volume;
+  if (wasMuted) pickOnScreen([...document.querySelectorAll(ELEMENT_SELECTORS.volume)])?.click();
+  for (let i = 0; i < 4; i++) pressPlayerKey('ArrowUp', 'ArrowUp', 38, { player });  // 한 번에 5%씩 → 20%
+  // 이미 최대면 키가 먹어도 그대로이므로 "키웠어요" 대신 컴퓨터 소리를 키우라고 알린다
+  setTimeout(() => showToast(!wasMuted && v.volume <= before ? t('volumeMaxToast') : t('volumeUpToast').replace('{n}', level())), 200);
 }
 
 function captionFromCommand(dir) {
@@ -1089,9 +1094,10 @@ function getPageSnapshot() {
 // ─── Selectors ───────────────────────────────────────────────────────────────
 
 const ELEMENT_SELECTORS = {
-  play:          '.ytp-play-button',
-  volume:        '.ytp-mute-button',
-  subtitles:     '.ytp-subtitles-button',
+  // 쇼츠는 일반 플레이어(.ytp-*)와 다른 버튼을 쓴다 (#play-pause-button-shape 등)
+  play:          '.ytp-play-button, #play-pause-button-shape button',
+  volume:        '.ytp-mute-button, [class*="VolumeControlsMuteIconButton"]',
+  subtitles:     '.ytp-subtitles-button, #closed-captioning-button-container button',
   settings:      '.ytp-settings-button',
   fullscreen:    '.ytp-fullscreen-button',
   theater:       '.ytp-size-button',
@@ -1678,8 +1684,9 @@ function showStep(index) {
     // 높이를 알아야 위치를 정할 수 있어서 화면에 붙인 뒤에 계산
     if (label) label.style.top = labelTop(initY, label) + 'px';
     startTracking(eType, eText);
-    // 자동 클릭 모드면 카운트다운 후 자동 클릭, 아니면 사용자가 누를 때 다음 단계로
-    if (!autoClickHere && !isLast) {
+    // 자동 클릭 모드면 카운트다운 후 자동 클릭, 아니면 사용자가 누를 때 다음 단계로.
+    // 마지막 단계도 누르면 안내를 닫는다 (눌렀는데 불빛이 남아 있으면 안 된 줄 안다)
+    if (!autoClickHere) {
       attachClickAdvance(eType, eText);
     }
   }

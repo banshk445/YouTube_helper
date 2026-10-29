@@ -80,6 +80,7 @@
   "captionOnToast": { "message": "Captions are on." },
   "captionAlreadyOnToast": { "message": "Captions are already on." },
   "volumeUpToast": { "message": "Volume up. Now {n}%." },
+  "volumeMaxToast": { "message": "Volume is already at maximum. If it's still quiet, turn up your computer or speakers." },
   "playSearchToast":   { "message": "Finding and playing '{q}'." },
   "playNotFoundToast": { "message": "Couldn't find '{q}'. Please try saying it differently." },
   "playStartToast": { "message": "Now playing: {title}. Say \"something else\" to choose another." },

@@ -80,6 +80,7 @@
   "captionOnToast": { "message": "자막을 켰어요." },
   "captionAlreadyOnToast": { "message": "자막이 이미 켜져 있어요." },
   "volumeUpToast": { "message": "소리를 키웠어요. 지금 {n}%예요." },
+  "volumeMaxToast": { "message": "소리가 이미 가장 커요. 그래도 작으면 컴퓨터나 스피커 소리를 키워 주세요." },
   "playSearchToast":   { "message": "'{q}' 찾아서 틀어 드릴게요." },
   "playNotFoundToast": { "message": "'{q}' 영상을 찾지 못했어요. 다른 말로 다시 말해 주세요." },
   "playStartToast": { "message": "틀어 드려요: {title}. 다른 걸 보시려면 \"다른 거\"라고 말해 주세요." },
