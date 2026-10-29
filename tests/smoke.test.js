@@ -271,7 +271,7 @@ const watch = `<html><body style="margin:0;height:4000px">
     });
   });
   const phrases = fs.readFileSync(path.join(__dirname, 'voice-phrases.tsv'), 'utf8')
-    .split('\n').filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t'));
+    .split(/\r?\n/).filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t'));
   const wrong = await page.evaluate(list => list.map(([want, text]) => {
     window.__did = 'AI'; window.__rate = 0.75;
     handleLocalCommand(text);
@@ -327,5 +327,19 @@ const watch = `<html><body style="margin:0;height:4000px">
   check('dock shows when controls show', !(await dockHidden()));
   await page.evaluate(() => { document.getElementById('movie_player').classList.add('ytp-autohide'); togglePanel(); });
   check('dock stays while panel open', !(await dockHidden()));
+
+  // 16. 천천히: 유튜브 속도 단축키(< >)로 바꿔 유튜브도 속도를 알게 함. 단축키가 안 먹는 화면은 직접 바꿈
+  html = `<html><body><div id="movie_player" class="html5-video-player"><video style="width:400px;height:200px"></video></div></body></html>`;
+  await load('https://www.youtube.com/watch?v=x');
+  await page.evaluate(() => {
+    window.__keys = [];
+    const p = document.getElementById('movie_player'), v = p.querySelector('video');
+    p.addEventListener('keydown', e => { if (!e.shiftKey) return; window.__keys.push(e.key); v.playbackRate += e.key === '<' ? -0.25 : e.key === '>' ? 0.25 : 0; });
+  });
+  const speedAfter = () => page.evaluate(() => { quickAction('speed', '천천히'); return [document.querySelector('video').playbackRate, window.__keys.join('')]; });
+  check('slow uses YouTube shortcut', JSON.stringify(await speedAfter()) === '[0.75,"<"]');
+  check('slow again back to normal', JSON.stringify(await speedAfter()) === '[1,"<>"]');
+  await page.evaluate(() => { const p = document.getElementById('movie_player'); p.replaceWith(...p.childNodes); });
+  check('slow falls back without player', await page.evaluate(() => { setSpeed(0.75); return document.querySelector('video').playbackRate; }) === 0.75);
   await browser.close();
 })();
