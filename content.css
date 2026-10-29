@@ -182,6 +182,24 @@ html[data-ytai-color="contrast"] {
   z-index: 1;
 }
 
+/* 보기 설정 화면에서만 머리줄 왼쪽(브라우저 뒤로 가기 자리)에 돌아가기. 머리줄이 sticky라 스크롤해도 보인다 */
+.ytai-header-back {
+  display: none;
+  flex-shrink: 0;
+  padding: calc(6px * var(--ytai-scale)) calc(12px * var(--ytai-scale));
+  background: var(--ytai-accent);
+  border: 2px solid var(--ytai-accent-outline);
+  border-radius: 999px;
+  color: var(--ytai-on-accent);
+  font-family: inherit;
+  font-size: calc(14px * var(--ytai-scale));
+  font-weight: 700;
+  cursor: pointer;
+}
+.ytai-header-back:hover { background: var(--ytai-accent-hover); }
+#ytai-panel.ytai-settings-open .ytai-header-back { display: block; }
+#ytai-panel.ytai-settings-open #ytai-panel-title { flex: 1; }
+
 .ytai-panel-header > span {
   font-size: calc(16px * var(--ytai-scale));
   font-weight: 700;

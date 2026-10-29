@@ -216,6 +216,7 @@ function createHelperPanel() {
   panel.tabIndex = -1;
   panel.innerHTML = `
     <div class="ytai-panel-header">
+      <button type="button" class="ytai-header-back" id="ytai-header-back">${t('settingsBack')}</button>
       <span id="ytai-panel-title">${t('panelHeaderTitle')}</span>
       <button type="button" class="ytai-close-btn" id="ytai-panel-close" aria-label="${t('closeLabel')}"><span aria-hidden="true">✕</span></button>
     </div>
@@ -526,10 +527,11 @@ function settingsHtml() {
 
 function bindSettings() {
   document.getElementById('ytai-open-settings').addEventListener('click', openSettings);
-  document.getElementById('ytai-settings-back').addEventListener('click', () => {
+  // 돌아가기는 아래(설정 끝)와 위(머리줄 왼쪽, 스크롤해도 고정) 두 곳에 있다
+  ['ytai-settings-back', 'ytai-header-back'].forEach(id => document.getElementById(id).addEventListener('click', () => {
     closeSettings();
     document.getElementById('ytai-open-settings').focus();
-  });
+  }));
 
   document.querySelectorAll('#ytai-settings-body [data-view-key]').forEach(btn => {
     btn.addEventListener('click', () => {
