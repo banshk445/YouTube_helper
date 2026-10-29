@@ -41,11 +41,22 @@ const MEDIA_LABELS = [
   { re: /AI|altered|synthetic/i,   msg: 'labelAiToast' },
 ];
 
+// 확장을 다시 불러오거나 업데이트하면, 이미 열려 있던 탭의 이 스크립트는 크롬과 끊긴다.
+// 그 뒤 chrome.*를 부르면 "Extension context invalidated" 오류가 나고 버튼도 동작하지 않으므로,
+// 끊겼으면 화면의 도우미를 걷어 내고 반복 검사를 멈춘다 (탭을 새로고침하면 새 도우미가 뜬다).
+function extensionGone() {
+  if (chrome.runtime?.id) return false;
+  document.querySelectorAll('[id^="ytai-"]').forEach(el => el.remove());
+  document.documentElement.removeAttribute('data-ytai-fs-hide');
+  return true;
+}
+
 function watchMediaLabels() {
   let navAt = Date.now();
   const shown = new Set();  // "영상ID:문구" — 영상마다 한 번만 알린다
   document.addEventListener('yt-navigate-finish', () => { navAt = Date.now(); });
-  setInterval(() => {
+  const timer = setInterval(() => {
+    if (extensionGone()) return clearInterval(timer);
     const vid = new URL(location.href).searchParams.get('v');
     // 이동 직후엔 설명란이 이전 영상 것일 수 있어 잠깐 기다리고, 광고 중에는 미룬다
     if (!vid || Date.now() - navAt < 1500 || document.querySelector('.html5-video-player.ad-showing')) return;
@@ -73,7 +84,8 @@ function watchMediaLabels() {
 // 유튜브 전체화면에서는 아래 버튼 묶음이 영상을 가리므로, 유튜브 조작바가 사라질 때 같이 숨기고
 // 마우스를 움직여 조작바가 나타나면 같이 보인다. 도움받기 창이 열려 있거나 버튼에 포커스가 있으면 둔다.
 function watchFullscreen() {
-  setInterval(() => {
+  const timer = setInterval(() => {
+    if (extensionGone()) return clearInterval(timer);
     const hide = !!document.fullscreenElement &&
       !!document.querySelector('#movie_player')?.classList.contains('ytp-autohide') &&
       !document.getElementById('ytai-panel')?.classList.contains('ytai-panel-visible') &&

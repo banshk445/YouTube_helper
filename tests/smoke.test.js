@@ -13,7 +13,7 @@ const stub = `window.__store = { autoClick: !!window.__auto };
 window.chrome = { i18n: { getMessage: k => k, getUILanguage: () => 'ko' },
   storage: { local: { get: (k, cb) => setTimeout(() => cb(Object.fromEntries([].concat(k).map(x => [x, window.__store[x]])))), remove(k) { delete window.__store[k]; }, set(o) { Object.assign(window.__store, o); } },
              onChanged: { addListener() {} } },
-  runtime: { onMessage: { addListener(f) { window.__onMsg = f; } }, sendMessage(m, cb) { if (m.type === 'GET_SHORTCUTS') setTimeout(() => cb({ 'zoom-in': 'Alt+Shift+Up' })); }, lastError: null, connect() { window.__connected = (window.__connected || 0) + 1; return { onMessage:{addListener(){}}, onDisconnect:{addListener(){}}, postMessage(){}, disconnect(){} }; } } };
+  runtime: { id: 'test', onMessage: { addListener(f) { window.__onMsg = f; } }, sendMessage(m, cb) { if (m.type === 'GET_SHORTCUTS') setTimeout(() => cb({ 'zoom-in': 'Alt+Shift+Up' })); }, lastError: null, connect() { window.__connected = (window.__connected || 0) + 1; return { onMessage:{addListener(){}}, onDisconnect:{addListener(){}}, postMessage(){}, disconnect(){} }; } } };
 // 음성 합성 흉내: 말한 문장을 기록하고 1.5초 뒤 끝남
 window.__spoken = [];
 Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { cancel() {}, speak(u) { window.__spoken.push([u.text, Date.now()]); setTimeout(() => u.onend && u.onend(), 1500); } } });
@@ -341,5 +341,20 @@ const watch = `<html><body style="margin:0;height:4000px">
   check('slow again back to normal', JSON.stringify(await speedAfter()) === '[1,"<>"]');
   await page.evaluate(() => { const p = document.getElementById('movie_player'); p.replaceWith(...p.childNodes); });
   check('slow falls back without player', await page.evaluate(() => { setSpeed(0.75); return document.querySelector('video').playbackRate; }) === 0.75);
+
+  // 17. 확장을 다시 불러와 크롬과 끊기면: 오류 없이 도우미를 걷어 내고 반복 검사를 멈춤
+  html = watch;
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await load('https://www.youtube.com/watch?v=x');
+  await page.waitForTimeout(300);
+  check('dock present before reload', await page.locator('#ytai-dock').count() === 1);
+  await page.evaluate(() => {
+    chrome.runtime.id = undefined;
+    chrome.i18n.getMessage = () => { throw new Error('Extension context invalidated.'); };
+  });
+  await page.waitForTimeout(1300);
+  check('stale helper removed after extension reload', await page.locator('[id^="ytai-"]').count() === 0);
+  check('no "context invalidated" errors: ' + errors.join(' / '), errors.length === 0);
   await browser.close();
 })();
