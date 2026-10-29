@@ -455,9 +455,9 @@ function changeCaptionSize(dir) {
 }
 
 // 유튜브 플레이어 단축키를 대신 누른다 (자막 크기 +/-, 음량 ↑)
-function pressPlayerKey(key, code, keyCode) {
-  document.querySelector('#movie_player, .html5-video-player')?.dispatchEvent(new KeyboardEvent('keydown', {
-    key, code, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true,
+function pressPlayerKey(key, code, keyCode, { shiftKey = false, player } = {}) {
+  (player || document.querySelector('#movie_player, .html5-video-player'))?.dispatchEvent(new KeyboardEvent('keydown', {
+    key, code, keyCode, which: keyCode, shiftKey, bubbles: true, cancelable: true, composed: true,
   }));
 }
 
@@ -1531,7 +1531,15 @@ function currentVideo() {
 function setSpeed(rate) {
   const v = currentVideo();
   if (!v) { showToast(t('notFoundToast').replace('{label}', t('quickSlow'))); return; }
-  v.playbackRate = rate ?? (v.playbackRate < 1 ? 1 : 0.75);
+  const target = rate ?? (v.playbackRate < 1 ? 1 : 0.75);
+  // video.playbackRate만 바꾸면 유튜브 플레이어는 여전히 1배로 알고 있어서 광고·넘기기 뒤에 되돌리고
+  // 설정 메뉴에도 "보통"으로 보인다. 유튜브 속도 단축키(< >, 0.25씩)로 바꾸고, 안 먹히면 직접 바꾼다.
+  const steps = Math.round((target - v.playbackRate) / 0.25);
+  for (let i = 0; i < Math.abs(steps); i++) {
+    if (steps > 0) pressPlayerKey('>', 'Period', 190, { shiftKey: true, player: v.closest('.html5-video-player') });
+    else pressPlayerKey('<', 'Comma', 188, { shiftKey: true, player: v.closest('.html5-video-player') });
+  }
+  if (v.playbackRate !== target) v.playbackRate = target;
   showToast(t(v.playbackRate < 1 ? 'slowOnToast' : 'slowOffToast'));
 }
 
