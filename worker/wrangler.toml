@@ -6,6 +6,11 @@ compatibility_date = "2026-07-01"
 # [vars] 안에 넣으면 진짜 설정이 아니라 그냥 환경변수가 되어버리므로 반드시 최상위에 둘 것.
 preview_urls = false
 
+# Worker는 원래 사용자와 가까운 데이터센터에서 돈다. 그곳이 Anthropic 미지원 지역이면
+# "403 forbidden: Request not allowed"로 거절되므로, Anthropic 호출이 늘 미국에서 나가게 고정한다.
+[placement]
+region = "aws:us-east-1"
+
 [vars]
 # 확장 프로그램 ID. 로컬 테스트 ID와 웹스토어 ID가 다르므로 쉼표로 둘 다 넣어도 된다.
 # manifest.json의 "key"로 고정한 팀 공용 ID (어느 PC·폴더에서 불러와도 같음).
