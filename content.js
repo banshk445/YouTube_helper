@@ -23,6 +23,7 @@ function initHelper() {
   createLiveRegion();
   loadViewSettings();
   listenForShortcuts();
+  listenForEsc();
   watchMiniplayer();
   watchFullscreen();
   watchMediaLabels();
@@ -137,6 +138,23 @@ function listenForShortcuts() {
     hint('ytai-zoom-in', 'zoom-in');
     hint('ytai-zoom-out', 'zoom-out');
   });
+}
+
+// 도우미가 무언가 하는 중(AI 답 기다림·안내·자동 클릭 카운트다운·영상 고르기·소리로 읽기)이면
+// Esc 한 번으로 조용히 모두 멈춘다. 아무것도 안 할 때는 가로채지 않아 유튜브의 Esc(전체화면 나가기 등)가 그대로 된다.
+function listenForEsc() {
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const guiding = document.getElementById('ytai-overlay') || document.getElementById('ytai-instruction') || _autoClickTimer;
+    const speaking = 'speechSynthesis' in window && speechSynthesis.speaking;
+    if (!_cancelRequest && !guiding && !_picker && !speaking) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (_cancelRequest) { _cancelRequest(); hidePanel(); }
+    if (guiding) endGuide();
+    if (_picker) closePicker();
+    stopSpeaking();
+  }, true);
 }
 
 function prefersReducedMotion() {
@@ -975,6 +993,8 @@ function captionFromCommand(dir) {
 
 // ─── Submit request ───────────────────────────────────────────────────────────
 
+let _cancelRequest = null;  // AI 답을 기다리는 동안만 있음
+
 function submitRequest(userRequest) {
   if (handleLocalCommand(userRequest)) {
     // 입력창만 비우고 패널은 그대로 둔다 (바뀐 크기·색을 바로 볼 수 있게)
@@ -990,9 +1010,18 @@ function submitRequest(userRequest) {
 
   const port = chrome.runtime.connect({ name: 'ytai-analyze' });
   let responded = false;
+  // Esc로 취소: 나중에 답이 와도 안내를 띄우지 않는다
+  _cancelRequest = () => {
+    responded = true;
+    _cancelRequest = null;
+    clearTimeout(timeout);
+    try { port.disconnect(); } catch {}
+    resetPanel();
+  };
 
   const timeout = setTimeout(() => {
     if (!responded) {
+      _cancelRequest = null;
       port.disconnect();
       resetPanel();
       showToast(t('timeoutError'));
@@ -1000,7 +1029,9 @@ function submitRequest(userRequest) {
   }, 35000);
 
   port.onMessage.addListener((response) => {
+    if (responded) return;
     responded = true;
+    _cancelRequest = null;
     clearTimeout(timeout);
     port.disconnect();
     if (response.type === 'ANALYSIS_RESULT') {
@@ -1013,6 +1044,7 @@ function submitRequest(userRequest) {
   });
 
   port.onDisconnect.addListener(() => {
+    _cancelRequest = null;
     clearTimeout(timeout);
     if (!responded) {
       resetPanel();
@@ -1383,16 +1415,22 @@ function detachClickAdvance() {
   _targetClickFn = null;
 }
 
+// 안내를 끝낸다 (마지막 단계를 마쳤거나 Esc로 멈춤)
+function endGuide() {
+  _guideToken++;
+  cancelAutoClick();
+  stopSpeaking();
+  stopTracking();
+  detachClickAdvance();
+  removeOverlay();
+  if (_floatingBtn) _floatingBtn.style.display = '';
+  resetPanel();
+}
+
 function advanceStep() {
   const isLast = _stepIndex === _steps.length - 1;
   if (isLast) {
-    _guideToken++;
-    stopSpeaking();
-    stopTracking();
-    detachClickAdvance();
-    removeOverlay();
-    if (_floatingBtn) _floatingBtn.style.display = '';
-    resetPanel();
+    endGuide();
   } else {
     _stepIndex++;
     showStep(_stepIndex);

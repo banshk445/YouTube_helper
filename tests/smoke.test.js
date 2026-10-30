@@ -386,5 +386,33 @@ const watch = `<html><body style="margin:0;height:4000px">
   await page.evaluate(() => { document.querySelector('video').volume = 1; volumeUp(); });
   await page.waitForTimeout(400);
   check('volume already max says so', (await page.locator('#ytai-toast').textContent()) === 'volumeMaxToast');
+
+  // 19. Esc: 도우미가 하는 일(AI 답 기다림·안내·자동 클릭)을 조용히 멈추고, 아무것도 안 할 땐 가로채지 않음
+  html = watch;
+  await load('https://www.youtube.com/watch?v=x');
+  await page.waitForTimeout(200);
+  const escDefaultPrevented = () => page.evaluate(() => { const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }); document.body.dispatchEvent(ev); return ev.defaultPrevented; });
+  check('Esc passes through when helper idle', !(await escDefaultPrevented()));
+  await page.evaluate(() => {
+    chrome.runtime.connect = () => ({ onMessage: { addListener(f) { window.__reply = f; } }, onDisconnect: { addListener() {} }, postMessage() {}, disconnect() {} });
+    togglePanel(); submitRequest('구독 버튼 어디 있어요');
+  });
+  check('loading shown while waiting', await page.evaluate(() => document.getElementById('ytai-loading').style.display) === 'flex');
+  check('Esc caught while waiting for AI', await escDefaultPrevented());
+  await page.evaluate(() => window.__reply({ type: 'ANALYSIS_RESULT', result: { steps: [{ instruction: '여기', element_type: 'play' }] } }));
+  await page.waitForTimeout(200);
+  check('late AI answer ignored after Esc', await page.locator('#ytai-overlay').count() === 0 && await page.evaluate(() => document.getElementById('ytai-loading').style.display) === 'none');
+  await page.evaluate(() => quickAction('like', '좋아요'));
+  await page.waitForTimeout(300);
+  check('guide shown', await page.locator('#ytai-overlay').count() === 1);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  check('Esc closes guide and restores dock', await page.locator('#ytai-overlay, #ytai-instruction').count() === 0 && await page.locator('#ytai-dock').isVisible());
+  await page.evaluate(() => { window.__playClicked = 0; document.querySelector('.ytp-play-button').addEventListener('click', () => window.__playClicked = 1); setView('autoClick', 2); setView('tts', false); quickAction('play', '재생'); });
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(2600);
+  check('Esc cancels auto-click countdown', await page.evaluate(() => window.__playClicked) === 0 && await page.locator('#ytai-overlay').count() === 0);
+  await page.evaluate(() => setView('autoClick', 0));
   await browser.close();
 })();
